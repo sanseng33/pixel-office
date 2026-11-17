@@ -23,12 +23,15 @@ const forcedHour = hourParam !== null && hourParam !== '' ? Number(hourParam) : 
 const appRoot = document.querySelector<HTMLElement>('#app');
 if (!appRoot) throw new Error('missing #app');
 
-const use3d = params.get('renderer') === '3d';
+const renderer = params.get('renderer');
 const debug = params.get('debug') === '1';
 
-const office: PlateView = use3d
-  ? await (await import('./render/office3d.ts')).createOffice(floors)
-  : createPlate(floors, { debug });
+const office: PlateView =
+  renderer === '3d'
+    ? await (await import('./render/office3d.ts')).createOffice(floors)
+    : renderer === 'plate'
+      ? createPlate(floors, { debug })
+      : await (await import('./render/tile/engine.ts')).createTileFloor(floors, { debug });
 
 function suzhouHour(now = Date.now()): number {
   if (forcedHour >= 0 && forcedHour <= 23) return forcedHour;
@@ -66,7 +69,10 @@ source.start((event) => office.push(event));
 
 function fit(): void {
   const side = Math.min(window.innerWidth, window.innerHeight);
-  const px = use3d ? Math.max(VIEW, VIEW * Math.floor(side / VIEW)) : Math.max(1, side);
+  const px =
+    renderer === 'plate'
+      ? Math.max(1, side)
+      : Math.max(VIEW, VIEW * Math.max(1, Math.floor(side / VIEW)));
   office.resize(px);
   office.el.style.width = `${px}px`;
   office.el.style.height = `${px}px`;
