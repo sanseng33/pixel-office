@@ -1,14 +1,15 @@
 /**
- * 楼层配置 — 改 `type` 就会换成那一层的室内。
- *
- * - level: 1 在最底，数字越大越靠上。保持 1–7 且不要重复。
- * - type: lobby / lounge / sales / it / rnd / vacant。
- * - label / name: 画在该层左墙内侧。像素字体只支持 A–Z、0–9 和 & - ! + 空格。
- * - stations: 办公层工位数量，大约 16–24，多了会挤出楼板。
- * - occupancy: 工位有人的比例，建议 0.4–0.6。
- * - people: 不坐工位的人数（访客、踱步、打球、吧台）。
+ * 楼层配置。`type` 决定这一层画哪些小道具。
+ * `polygon` 是底图（1024×1024）上该层可走的 L 形楼板，单位是底图像素。
+ * `origin` + `axisU` / `axisV` 是贴着底图地板网格的等距坐标。
+ * 1F 在最底。坐标是对照 public/assets/bg-shell.jpg（无闪电的壳体）量的，?debug=1 可以核对。
  */
 export type FloorType = 'lobby' | 'lounge' | 'sales' | 'it' | 'rnd' | 'vacant';
+
+export interface Vec2 {
+  x: number;
+  y: number;
+}
 
 export interface FloorConfig {
   level: number;
@@ -16,13 +17,67 @@ export interface FloorConfig {
   label: string;
   name: string;
   title: string;
+  /** 办公层工位上限。实际只放得进楼板的那些。 */
   stations: number;
   occupancy: number;
   people: number;
+  polygon: readonly Vec2[];
+  origin: Vec2;
+  axisU: Vec2;
+  axisV: Vec2;
+  /** 左墙楼层名的锚点。 */
+  labelAt: Vec2;
+  /** 楼板外缘折线，电流沿着这些线走。 */
+  edges: readonly (readonly Vec2[])[];
+}
+
+/** 每层楼板靠近观众的那条前缘（底图像素 y）。往上每层大约 103px。 */
+const FRONT_Y: Record<number, number> = {
+  1: 946,
+  2: 840,
+  3: 740,
+  4: 636,
+  5: 530,
+  6: 428,
+  7: 326,
+};
+
+function plateOf(front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'> {
+  const yf = front;
+  const ym = front - 42;
+  const yb = front - 86;
+  const lip: readonly Vec2[] = [
+    { x: 196, y: yf + 2 },
+    { x: 540, y: yf - 8 },
+    { x: 540, y: ym },
+    { x: 848, y: ym - 6 },
+  ];
+  return {
+    polygon: [
+      { x: 246, y: yf - 12 },
+      { x: 524, y: yf - 16 },
+      { x: 524, y: ym + 8 },
+      { x: 820, y: ym + 4 },
+      { x: 820, y: yb },
+      { x: 246, y: yb },
+    ],
+    origin: { x: 252, y: yb + 8 },
+    axisU: { x: 42, y: 5 },
+    axisV: { x: 6, y: 22 },
+    labelAt: { x: 108, y: yf - 52 },
+    edges: [lip],
+  };
+}
+
+function floor(
+  partial: Omit<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'>,
+): FloorConfig {
+  const front = FRONT_Y[partial.level] ?? 900;
+  return { ...partial, ...plateOf(front) };
 }
 
 export const floors: readonly FloorConfig[] = [
-  {
+  floor({
     level: 1,
     type: 'lobby',
     label: '1F',
@@ -30,9 +85,9 @@ export const floors: readonly FloorConfig[] = [
     title: '入口与公共展厅',
     stations: 0,
     occupancy: 0,
-    people: 5,
-  },
-  {
+    people: 3,
+  }),
+  floor({
     level: 2,
     type: 'lounge',
     label: '2F',
@@ -40,39 +95,39 @@ export const floors: readonly FloorConfig[] = [
     title: '员工休息区',
     stations: 0,
     occupancy: 0,
-    people: 6,
-  },
-  {
+    people: 4,
+  }),
+  floor({
     level: 3,
     type: 'sales',
     label: '3F',
     name: 'SALES',
     title: '销售',
-    stations: 20,
-    occupancy: 0.5,
-    people: 2,
-  },
-  {
+    stations: 12,
+    occupancy: 0.45,
+    people: 1,
+  }),
+  floor({
     level: 4,
     type: 'it',
     label: '4F',
     name: 'IT',
     title: 'IT 机房',
-    stations: 14,
-    occupancy: 0.5,
-    people: 2,
-  },
-  {
+    stations: 8,
+    occupancy: 0.45,
+    people: 1,
+  }),
+  floor({
     level: 5,
     type: 'rnd',
     label: '5F',
     name: 'R&D',
     title: '研发',
-    stations: 18,
-    occupancy: 0.5,
+    stations: 12,
+    occupancy: 0.45,
     people: 1,
-  },
-  {
+  }),
+  floor({
     level: 6,
     type: 'vacant',
     label: '6F',
@@ -81,15 +136,66 @@ export const floors: readonly FloorConfig[] = [
     stations: 0,
     occupancy: 0,
     people: 0,
-  },
-  {
+  }),
+  floor({
     level: 7,
     type: 'rnd',
     label: '7F',
     name: 'R&D',
     title: '研发（实验台）',
-    stations: 16,
-    occupancy: 0.5,
+    stations: 10,
+    occupancy: 0.4,
     people: 1,
-  },
+  }),
 ];
+
+/** 屋顶空白字牌的内框，底图像素。 */
+export const SIGN_BOARD = { x: 292, y: 58, w: 214, h: 78 };
+
+/** 角柱：电流从下往上送。 */
+export const COLUMN_LINES: readonly (readonly Vec2[])[] = [
+  [
+    { x: 186, y: 960 },
+    { x: 186, y: 230 },
+  ],
+  [
+    { x: 540, y: 960 },
+    { x: 540, y: 250 },
+  ],
+  [
+    { x: 848, y: 940 },
+    { x: 848, y: 200 },
+  ],
+];
+
+/** 屋顶女儿墙外缘，顺着屋面亮边走。 */
+export const ROOF_EDGE: readonly Vec2[] = [
+  { x: 196, y: 228 },
+  { x: 540, y: 196 },
+  { x: 848, y: 188 },
+  { x: 820, y: 236 },
+  { x: 500, y: 258 },
+  { x: 210, y: 246 },
+];
+
+export const PLATE_SRC = '/assets/bg-shell.jpg';
+export const PLATE_SIZE = 1024;
+
+export function isoPoint(floorCfg: FloorConfig, u: number, v: number): Vec2 {
+  return {
+    x: floorCfg.origin.x + u * floorCfg.axisU.x + v * floorCfg.axisV.x,
+    y: floorCfg.origin.y + u * floorCfg.axisU.y + v * floorCfg.axisV.y,
+  };
+}
+
+export function pointInPolygon(p: Vec2, polygon: readonly Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if (!a || !b || a.y === b.y) continue;
+    const hit = (a.y > p.y) !== (b.y > p.y);
+    if (hit && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}

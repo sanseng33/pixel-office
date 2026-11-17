@@ -11,7 +11,8 @@ import {
 import { floors } from './config/floors.ts';
 import { createMockEventSource } from './events/source.ts';
 import type { OfficeEventType } from './events/source.ts';
-import { createOffice } from './render/office3d.ts';
+import { createPlate } from './render/plate.ts';
+import type { PlateView } from './render/plate.ts';
 
 const params = new URLSearchParams(location.search);
 if (params.get('kiosk') === '1') document.body.classList.add('kiosk');
@@ -22,7 +23,12 @@ const forcedHour = hourParam !== null && hourParam !== '' ? Number(hourParam) : 
 const appRoot = document.querySelector<HTMLElement>('#app');
 if (!appRoot) throw new Error('missing #app');
 
-const office = createOffice(floors);
+const use3d = params.get('renderer') === '3d';
+const debug = params.get('debug') === '1';
+
+const office: PlateView = use3d
+  ? await (await import('./render/office3d.ts')).createOffice(floors)
+  : createPlate(floors, { debug });
 
 function suzhouHour(now = Date.now()): number {
   if (forcedHour >= 0 && forcedHour <= 23) return forcedHour;
@@ -60,8 +66,7 @@ source.start((event) => office.push(event));
 
 function fit(): void {
   const side = Math.min(window.innerWidth, window.innerHeight);
-  const scale = Math.max(1, Math.floor(side / VIEW));
-  const px = VIEW * scale;
+  const px = use3d ? Math.max(VIEW, VIEW * Math.floor(side / VIEW)) : Math.max(1, side);
   office.resize(px);
   office.el.style.width = `${px}px`;
   office.el.style.height = `${px}px`;
