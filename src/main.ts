@@ -69,10 +69,13 @@ source.start((event) => office.push(event));
 
 function fit(): void {
   const side = Math.min(window.innerWidth, window.innerHeight);
+  const tile = 360;
   const px =
     renderer === 'plate'
       ? Math.max(1, side)
-      : Math.max(VIEW, VIEW * Math.max(1, Math.floor(side / VIEW)));
+      : renderer === '3d'
+        ? Math.max(VIEW, VIEW * Math.max(1, Math.floor(side / VIEW)))
+        : Math.max(tile, tile * Math.max(1, Math.floor(side / tile)));
   office.resize(px);
   office.el.style.width = `${px}px`;
   office.el.style.height = `${px}px`;

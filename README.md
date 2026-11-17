@@ -1,6 +1,6 @@
 # 像素公司 / Pixel Office
 
-智慧芽（PatSnap）苏州新办公室大堂用的 1:1 正方形屏幕原型。当前默认是一层研发楼的等距格子：PixiJS 按 2:1 画在 540 像素上，再整数放大。地板、墙、桌子和人都在同一张格子上。`?renderer=plate` 打开以前的底图叠层，`?renderer=3d` 打开 three.js 场景。
+智慧芽（PatSnap）苏州新办公室大堂用的 1:1 正方形屏幕原型。当前默认是一层研发楼的等距格子：PixiJS 按 2:1 画在 360 像素上，再整数放大到屏幕。地板、墙、桌子和人都在同一张格子上。`?renderer=plate` 打开以前的底图叠层，`?renderer=3d` 打开 three.js 场景。
 
 ![大厅画面](docs/screenshot.png)
 

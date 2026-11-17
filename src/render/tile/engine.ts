@@ -5,25 +5,45 @@ import type { PlateView } from '../plate.ts';
 import { PLAN, layoutFor } from './layout.ts';
 import type { FloorLayout, Furn } from './layout.ts';
 
-const VIEW = 540;
-const HW = 22;
-const HH = 11;
-const ZH = 18;
+const VIEW = 360;
+const HW = 14;
+const HH = 7;
+const ZH = 12;
 const FLOOR_Z = 1;
-const WALL_Z = 4;
+const WALL_Z = 3;
 
 const NAVY = 0x071422;
 const MID = 0x14365c;
+const DIM = 0x1c3d62;
 const ICE = 0x9ad7ff;
 const WHITE = 0xf4fbff;
 
+/** 5×5 glyphs. 7, 5, S and & are drawn so they do not collapse into each other. */
 const GLYPH: Record<string, readonly string[]> = {
-  R: ['111', '101', '111', '110', '101'],
-  D: ['110', '101', '101', '101', '110'],
-  F: ['111', '100', '110', '100', '100'],
-  '&': ['010', '101', '010', '101', '010'],
-  '5': ['111', '100', '111', '001', '111'],
-  ' ': ['000', '000', '000', '000', '000'],
+  A: ['01110', '10001', '11111', '10001', '10001'],
+  D: ['11110', '10001', '10001', '10001', '11110'],
+  E: ['11111', '10000', '11110', '10000', '11111'],
+  F: ['11111', '10000', '11110', '10000', '10000'],
+  N: ['10001', '11001', '10101', '10011', '10001'],
+  O: ['01110', '10001', '10001', '10001', '01110'],
+  P: ['11110', '10001', '11110', '10000', '10000'],
+  R: ['11110', '10001', '11110', '10100', '10001'],
+  S: ['01111', '10000', '01110', '00001', '11110'],
+  T: ['11111', '00100', '00100', '00100', '00100'],
+  '&': ['01100', '10010', '01100', '10010', '01101'],
+  '0': ['01110', '10011', '10101', '11001', '01110'],
+  '1': ['00100', '01100', '00100', '00100', '01110'],
+  '2': ['01110', '10001', '00110', '01000', '11111'],
+  '3': ['11110', '00001', '01110', '00001', '11110'],
+  '4': ['10001', '10001', '11111', '00001', '00001'],
+  '5': ['11111', '10000', '11110', '00001', '11110'],
+  '6': ['01110', '10000', '11110', '10001', '01110'],
+  '7': ['11111', '00001', '00010', '00100', '01000'],
+  '8': ['01110', '10001', '01110', '10001', '01110'],
+  '9': ['01110', '10001', '01111', '00001', '01110'],
+  '/': ['00001', '00010', '00100', '01000', '10000'],
+  '.': ['00000', '00000', '00000', '01100', '01100'],
+  ' ': ['00000', '00000', '00000', '00000', '00000'],
 };
 
 interface Pt {
@@ -73,7 +93,7 @@ export async function createTileFloor(
   configs: readonly FloorConfig[],
   options?: { debug?: boolean },
 ): Promise<PlateView> {
-  const shown = configs.find((f) => f.type === 'rnd') ?? configs[0];
+  const shown = configs.find((f) => f.level === 7) ?? configs.find((f) => f.type === 'rnd') ?? configs[0];
   if (!shown) throw new Error('no floor config');
   const layout = layoutFor(shown.type);
   const debug = options?.debug === true;
@@ -136,7 +156,7 @@ export async function createTileFloor(
   originY = 0;
   const box = boundsOf();
   originX = Math.round(VIEW / 2 - (box.minX + box.maxX) / 2);
-  originY = Math.round(VIEW / 2 - (box.minY + box.maxY) / 2);
+  originY = Math.round(VIEW / 2 - (box.minY + box.maxY) / 2 + 18);
 
   const outline = buildOutline(layout.solid, iso);
   const columns = columnRuns(iso);
@@ -183,20 +203,23 @@ export async function createTileFloor(
     queue.push({ key: (gx + gy) * 100 + gz, draw });
   }
 
-  function paintText(g: Graphics, text: string, x: number, y: number, color: number): void {
+  function paintText(g: Graphics, text: string, x: number, y: number, color: number, scale = 1): void {
     let cx = Math.round(x);
     const top = Math.round(y);
     for (const ch of text) {
-      const rows = GLYPH[ch] ?? GLYPH[' '];
-      if (!rows) continue;
+      const rows = GLYPH[ch] ?? GLYPH[ch.toUpperCase()] ?? GLYPH[' '];
+      if (!rows) {
+        cx += 6 * scale;
+        continue;
+      }
       for (let r = 0; r < rows.length; r++) {
         const row = rows[r] ?? '';
         for (let c = 0; c < row.length; c++) {
           if (row[c] !== '1') continue;
-          g.rect(cx + c * 2, top + r * 2, 2, 2).fill({ color });
+          g.rect(cx + c * scale, top + r * scale, scale, scale).fill({ color });
         }
       }
-      cx += 8;
+      cx += 6 * scale;
     }
   }
 
@@ -223,44 +246,52 @@ export async function createTileFloor(
     const fx = Math.round(foot.x);
     const fy = Math.round(foot.y) + bob;
     if (pose === 'sit' || pose === 'chat') {
-      g.rect(fx - 3, fy - 4, 6, 3).fill({ color: ICE });
-      g.rect(fx - 2, fy - 8, 4, 4).fill({ color: WHITE });
+      g.rect(fx - 3, fy - 4, 7, 4).fill({ color: ICE });
+      g.rect(fx - 2, fy - 8, 5, 4).fill({ color: WHITE });
+      if (pose === 'chat') {
+        g.rect(fx - 2, fy - 12, 1, 1).fill({ color: WHITE });
+        g.rect(fx + 1, fy - 12, 1, 1).fill({ color: WHITE });
+        g.rect(fx - 3, fy - 11, 5, 1).fill({ color: ICE });
+        g.rect(fx - 2, fy - 10, 3, 1).fill({ color: ICE });
+        g.rect(fx - 1, fy - 9, 1, 1).fill({ color: WHITE });
+      }
       return;
     }
     const step = pose === 'walk' && Math.sin(phase * 10) > 0 ? 1 : 0;
     g.rect(fx - 2, fy - 3, 1, 3).fill({ color: ICE });
     g.rect(fx + 1 + step, fy - 3, 1, 3).fill({ color: ICE });
-    g.rect(fx - 2, fy - 7, 5, 4).fill({ color: ICE });
-    g.rect(fx - 1, fy - 10, 3, 3).fill({ color: WHITE });
+    g.rect(fx - 3, fy - 7, 6, 4).fill({ color: ICE });
+    g.rect(fx - 2, fy - 10, 4, 3).fill({ color: WHITE });
   }
 
   function drawDesk(g: Graphics, x: number, y: number, lit: boolean): void {
-    const c = iso(x + 0.5, y + 0.42, FLOOR_Z);
+    const c = iso(x + 0.5, y + 0.5, FLOOR_Z);
     const top: Pt[] = [
-      { x: c.x, y: c.y - 7 },
-      { x: c.x + 9, y: c.y - 2 },
-      { x: c.x + 2, y: c.y + 3 },
-      { x: c.x - 7, y: c.y - 2 },
+      { x: c.x, y: c.y - 5 },
+      { x: c.x + 12, y: c.y },
+      { x: c.x, y: c.y + 5 },
+      { x: c.x - 12, y: c.y },
     ];
-    poly(g, top, MID, 0.95, ICE, 1);
+    poly(g, top, 0x102848, 0.96, WHITE, 1);
     const screen = (ox: number, oy: number) => {
-      g.rect(Math.round(c.x + ox), Math.round(c.y + oy), 3, 4).fill({ color: lit ? WHITE : ICE, alpha: lit ? 1 : 0.7 });
+      g.rect(Math.round(c.x + ox), Math.round(c.y + oy), 4, 5).fill({ color: 0x0b2036 });
+      g.rect(Math.round(c.x + ox) + 1, Math.round(c.y + oy) + 1, 2, 3).fill({ color: lit ? WHITE : ICE, alpha: lit ? 1 : 0.55 });
     };
-    screen(-6, -11);
-    screen(-1, -12);
-    // Chair, on the near side of the desk.
+    screen(-8, -9);
+    screen(-2, -10);
     const chair: Pt[] = [
-      { x: c.x - 2, y: c.y + 4 },
-      { x: c.x + 4, y: c.y + 7 },
-      { x: c.x + 6, y: c.y + 5 },
-      { x: c.x, y: c.y + 2 },
+      { x: c.x - 3, y: c.y + 5 },
+      { x: c.x + 5, y: c.y + 8 },
+      { x: c.x + 7, y: c.y + 6 },
+      { x: c.x - 1, y: c.y + 3 },
     ];
-    poly(g, chair, NAVY, 1, ICE, 0.9);
+    poly(g, chair, NAVY, 1, ICE, 1);
   }
 
   function drawFurn(g: Graphics, item: Furn, now: number): void {
     if (item.kind === 'desk') {
-      const lit = occupiedAt(item.x, item.y) && Math.sin(now / 180 + item.x * 3) > -0.2;
+      const occupied = occupiedAt(item.x, item.y);
+      const lit = occupied && Math.floor(now / 220 + item.x * 2) % 3 !== 0;
       drawDesk(g, item.x, item.y, lit);
       return;
     }
@@ -312,13 +343,14 @@ export async function createTileFloor(
         const gx = x;
         const gy = y;
         pushDraw(gx, gy, 0, (g) => {
-          if (!layout.solid(x, y - 1)) poly(g, face(x, y, x + 1, y), MID, 0.85, ICE, 0.55);
-          if (!layout.solid(x + 1, y)) poly(g, face(x + 1, y, x + 1, y + 1), MID, 0.75, ICE, 0.45);
-          if (!layout.solid(x, y + 1)) poly(g, face(x, y + 1, x + 1, y + 1), MID, 0.9, ICE, 0.7);
-          if (!layout.solid(x - 1, y)) poly(g, face(x, y, x, y + 1), MID, 0.8, ICE, 0.5);
+          if (!layout.solid(x, y - 1)) poly(g, face(x, y, x + 1, y), 0x0c243c, 0.9, DIM, 0.35);
+          if (!layout.solid(x + 1, y)) poly(g, face(x + 1, y, x + 1, y + 1), 0x0c243c, 0.9, DIM, 0.3);
+          if (!layout.solid(x, y + 1)) poly(g, face(x, y + 1, x + 1, y + 1), 0x0e2844, 0.92, DIM, 0.4);
+          if (!layout.solid(x - 1, y)) poly(g, face(x, y, x, y + 1), 0x0c243c, 0.9, DIM, 0.3);
         });
         pushDraw(gx, gy, 2, (g) => {
-          poly(g, tilePts(x, y, FLOOR_Z), 0x0d2748, 0.55, ICE, 0.85);
+          const mark = (x + y) % 2 === 0;
+          poly(g, tilePts(x, y, FLOOR_Z), 0x0a1c33, 0.42, mark ? DIM : undefined, 0.28);
         });
         if (y === 0) {
           pushDraw(gx, gy, 3, (g) => {
@@ -326,7 +358,7 @@ export async function createTileFloor(
             const b = iso(x + 1, y, FLOOR_Z);
             const c = iso(x + 1, y, WALL_Z);
             const d = iso(x, y, WALL_Z);
-            poly(g, [a, b, c, d], 0x0b2038, 0.92, ICE, 0.8);
+            poly(g, [a, b, c, d], 0x09182c, 0.88, DIM, 0.4);
           });
         }
         if (x === 0) {
@@ -335,7 +367,7 @@ export async function createTileFloor(
             const b = iso(x, y + 1, FLOOR_Z);
             const c = iso(x, y + 1, WALL_Z);
             const d = iso(x, y, WALL_Z);
-            poly(g, [a, b, c, d], 0x0a1c34, 0.92, ICE, 0.75);
+            poly(g, [a, b, c, d], 0x081624, 0.88, DIM, 0.35);
           });
         }
       }
@@ -355,12 +387,15 @@ export async function createTileFloor(
     queue.sort((a, b) => a.key - b.key);
     world.clear();
     for (const item of queue) item.draw(world);
-    paintText(world, `${shown.label} ${shown.name}`, 16, 18, WHITE);
+    strokeLoop(world, outline, ICE);
+    const seated = people.filter((p) => p.pose === 'sit').length;
+    paintText(world, `PATSNAP . 7F R&D`, 12, 8, WHITE, 2);
+    paintText(world, `SEAT ${seated}/${layout.desks.length}  ON ${people.length}`, 12, 22, ICE, 1);
 
     glow.clear();
     const hot = now < burst;
-    drawPulses(glow, outline, now, hot ? 70 : 42, hot ? 6 : 4);
-    for (const column of columns) drawPulses(glow, column, now + 200, 28, 2);
+    drawPulses(glow, outline, now, hot ? 78 : 46, hot ? 5 : 4);
+    for (const column of columns) drawPulses(glow, column, now + 180, 34, 2);
     if (hour >= 20 || hour < 6) {
       world.rect(0, 0, VIEW, VIEW).fill({ color: 0x02060c, alpha: 0.28 });
     }
@@ -663,15 +698,22 @@ function pointAlong(run: Run, distance: number): Pt {
   return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
 }
 
+function strokeLoop(g: Graphics, run: Run, color: number): void {
+  if (run.pts.length < 2) return;
+  const flat: number[] = [];
+  for (const p of run.pts) flat.push(Math.round(p.x), Math.round(p.y));
+  g.poly(flat, true).stroke({ width: 1, color, alpha: 1, pixelLine: true });
+}
+
 function drawPulses(g: Graphics, run: Run, now: number, speed: number, count: number): void {
   if (run.total < 8) return;
   for (let n = 0; n < count; n++) {
     const head = ((now / 1000) * speed + n * (run.total / count)) % run.total;
-    for (let k = 6; k >= 0; k--) {
-      const q = pointAlong(run, head - k * 5);
-      const alpha = (1 - k / 7) * 0.95;
+    for (let k = 8; k >= 0; k--) {
+      const q = pointAlong(run, head - k * 1.15);
+      const alpha = k === 0 ? 1 : (1 - k / 9) * 0.85;
       const size = k === 0 ? 3 : 2;
-      g.rect(Math.round(q.x), Math.round(q.y), size, size).fill({ color: k === 0 ? WHITE : ICE, alpha });
+      g.rect(Math.round(q.x) - 1, Math.round(q.y) - 1, size, size).fill({ color: k < 2 ? WHITE : ICE, alpha });
     }
   }
 }
