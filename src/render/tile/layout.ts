@@ -1,7 +1,7 @@
 import type { FloorType } from '../../config/floors.ts';
 
 /** One R&D floor on a near-square grid. Other roles share this generator so they can be filled in later. */
-export const PLAN = 12;
+export const PLAN = 15;
 
 export type FurnKind = 'desk' | 'table' | 'plant' | 'coffee';
 
@@ -9,9 +9,9 @@ export interface Furn {
   kind: FurnKind;
   x: number;
   y: number;
-  /** Desk spans this many tiles in +x. */
+  /** Span along +x, in tiles. A desk is 2. */
   w: number;
-  /** 1 = sitter on the +y side, -1 = sitter on the -y side. Monitors face the sitter. */
+  /** 1 = sitter on the +y side, -1 = sitter on the -y side. Screens face the sitter. */
   face?: 1 | -1;
 }
 
@@ -28,21 +28,17 @@ export interface FloorLayout {
 
 function stepped(x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= PLAN || y >= PLAN) return false;
-  // Near corner (high x and high y) is cut in steps so the room reads as open.
-  if (x >= 8 && y >= 8) return false;
-  if (x >= 9 && y >= 6) return false;
-  if (y >= 9 && x >= 6) return false;
+  // Near corner (high x and high y) stays stepped, same cut as the 12-grid scaled up.
+  if (x >= 10 && y >= 10) return false;
+  if (x >= 11 && y >= 8) return false;
+  if (y >= 11 && x >= 8) return false;
   return true;
 }
 
 function base(role: FloorType, furniture: readonly Furn[], chat: readonly { x: number; y: number }[]): FloorLayout {
-  const block = new Set(furniture.filter((f) => f.kind !== 'plant').map((f) => `${f.x},${f.y}`));
-  // Plants block the tile they stand on too.
+  const block = new Set<string>();
   for (const f of furniture) {
-    if (f.kind === 'plant' || f.kind === 'coffee' || f.kind === 'table') block.add(`${f.x},${f.y}`);
-    if (f.kind === 'desk' || f.kind === 'table') {
-      for (let i = 0; i < f.w; i++) block.add(`${f.x + i},${f.y}`);
-    }
+    for (let i = 0; i < f.w; i++) block.add(`${f.x + i},${f.y}`);
   }
   const solid = (x: number, y: number) => stepped(x, y);
   const blocked = (x: number, y: number) => block.has(`${x},${y}`);
@@ -57,34 +53,45 @@ function base(role: FloorType, furniture: readonly Furn[], chat: readonly { x: n
   };
 }
 
-function pair(furniture: Furn[], xs: number[], y: number): void {
-  for (const x of xs) {
-    if (stepped(x, y)) furniture.push({ kind: 'desk', x, y, w: 1, face: -1 });
-    if (stepped(x, y + 1)) furniture.push({ kind: 'desk', x, y: y + 1, w: 1, face: 1 });
-  }
+function desk(furniture: Furn[], x: number, y: number, face: 1 | -1): void {
+  if (!stepped(x, y) || !stepped(x + 1, y)) return;
+  furniture.push({ kind: 'desk', x, y, w: 2, face });
 }
 
 function rndLayout(): FloorLayout {
   const furniture: Furn[] = [];
-  // Face-to-face clusters, with a full tile of aisle between them.
-  pair(furniture, [1, 2], 2);
-  pair(furniture, [4, 5, 6], 2);
-  pair(furniture, [1, 2], 5);
-  pair(furniture, [4, 5, 6], 5);
-  for (const x of [8, 9, 10]) {
-    if (stepped(x, 1)) furniture.push({ kind: 'table', x, y: 1, w: 1 });
-  }
-  if (stepped(9, 4)) furniture.push({ kind: 'coffee', x: 9, y: 4, w: 1 });
+  // Face-to-face clusters. Each desk is 2 tiles along x, monitors meet in the middle.
+  // A full tile separates desks inside a cluster; two tiles separate the back clusters.
+  desk(furniture, 1, 2, -1);
+  desk(furniture, 4, 2, -1);
+  desk(furniture, 1, 3, 1);
+  desk(furniture, 4, 3, 1);
+
+  desk(furniture, 8, 2, -1);
+  desk(furniture, 11, 2, -1);
+  desk(furniture, 8, 3, 1);
+  desk(furniture, 11, 3, 1);
+
+  desk(furniture, 1, 7, -1);
+  desk(furniture, 4, 7, -1);
+  desk(furniture, 7, 7, -1);
+  desk(furniture, 1, 8, 1);
+  desk(furniture, 4, 8, 1);
+  desk(furniture, 7, 8, 1);
+
+  if (stepped(9, 9) && stepped(10, 9)) furniture.push({ kind: 'table', x: 9, y: 9, w: 2 });
+  if (stepped(1, 10) && stepped(2, 10)) furniture.push({ kind: 'coffee', x: 1, y: 10, w: 2 });
   for (const [x, y] of [
-    [10, 3],
-    [10, 5],
-    [1, 10],
+    [14, 2],
+    [12, 6],
+    [6, 10],
+    [2, 11],
   ] as const) {
     if (stepped(x, y)) furniture.push({ kind: 'plant', x, y, w: 1 });
   }
   const chat = [
-    { x: 8, y: 4 },
-    { x: 8, y: 3 },
+    { x: 3, y: 9 },
+    { x: 3, y: 10 },
   ].filter((p) => stepped(p.x, p.y));
   return base('rnd', furniture, chat);
 }
