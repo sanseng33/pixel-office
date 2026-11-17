@@ -4,6 +4,7 @@ import {
   PLATE_SRC,
   ROOF_EDGE,
   SIGN_BOARD,
+  lipAt,
   pointInPolygon,
 } from '../config/floors.ts';
 import type { FloorConfig, Vec2 } from '../config/floors.ts';
@@ -37,6 +38,8 @@ interface Prop {
   floor: number;
   x: number;
   y: number;
+  u: number;
+  v: number;
   kind: PropKind;
   phase: number;
   dual: boolean;
@@ -46,8 +49,10 @@ interface Actor {
   floor: number;
   x: number;
   y: number;
-  tx: number;
-  ty: number;
+  u: number;
+  v: number;
+  tu: number;
+  tv: number;
   pose: Pose;
   home: Pose;
   timer: number;
@@ -55,6 +60,7 @@ interface Actor {
   seed: number;
   role: number;
   desk: number;
+  axis: 0 | 1;
 }
 
 export interface PlateView {
@@ -152,99 +158,42 @@ function spot(floor: FloorConfig, fx: number, fy: number): Vec2 | null {
   return null;
 }
 
-/** 坐着的人脚落在桌面中心前方这一点。 */
-const SEAT = 8;
-
 function frontAt(edge: readonly Vec2[], x: number): number {
-  for (let i = 0; i < edge.length - 1; i++) {
-    const a = edge[i];
-    const b = edge[i + 1];
-    if (!a || !b) continue;
-    if ((a.x <= x && x <= b.x) || (b.x <= x && x <= a.x)) {
-      const span = b.x - a.x || 1;
-      return a.y + ((b.y - a.y) * (x - a.x)) / span;
-    }
-  }
-  const last = edge[edge.length - 1];
-  return last?.y ?? 0;
+  return lipAt(edge, x);
+}
+
+/** 把楼板坐标 (u 沿前缘, v 朝观众) 映到屏幕。v=0 在前缘内侧。 */
+function onFloor(cfg: FloorConfig, u: number, v: number): Vec2 {
+  const lip = cfg.edges[0] ?? [];
+  const x = 305 + u * 52;
+  const y = frontAt(lip, x) - 24 - v * 22;
+  return { x, y };
 }
 
 function placeIso(
   cfg: FloorConfig,
   kind: PropKind,
-  add: (floor: number, x: number, y: number, kind: PropKind, dual?: boolean) => void,
+  add: (floor: number, x: number, y: number, kind: PropKind, u: number, v: number, dual?: boolean) => void,
   dual = false,
 ): void {
-  const poly = cfg.polygon;
-  if (poly.length < 3) return;
-  const { axisU: U, axisV: V, origin } = cfg;
-  const det = U.x * V.y - U.y * V.x;
-  if (Math.abs(det) < 1e-4) return;
-  const toUV = (p: Vec2) => {
-    const dx = p.x - origin.x;
-    const dy = p.y - origin.y;
-    return { u: (dx * V.y - dy * V.x) / det, v: (dy * U.x - dx * U.y) / det };
-  };
-  const fromUV = (u: number, v: number): Vec2 => ({
-    x: origin.x + u * U.x + v * V.x,
-    y: origin.y + u * U.y + v * V.y,
-  });
-  let minU = Infinity;
-  let maxU = -Infinity;
-  let minV = Infinity;
-  let maxV = -Infinity;
-  for (const p of poly) {
-    const uv = toUV(p);
-    if (uv.u < minU) minU = uv.u;
-    if (uv.u > maxU) maxU = uv.u;
-    if (uv.v < minV) minV = uv.v;
-    if (uv.v > maxV) maxV = uv.v;
-  }
-  const du = maxU - minU;
-  const dv = maxV - minV;
-  const u0 = minU + du * 0.08;
-  const u1 = maxU - du * 0.08;
-  // 三排深度：前两排靠近，中间留一条过道，后排靠里。
-  const depth = [0.34, 0.5, 0.76];
-  const columns = 10;
-  const spots: Vec2[] = [];
-  for (let i = 0; i < columns; i++) {
-    const u = u0 + ((u1 - u0) * i) / (columns - 1);
-    let lo = Infinity;
-    let hi = -Infinity;
-    const steps = 72;
-    for (let k = 0; k <= steps; k++) {
-      const v = minV - dv * 0.15 + ((dv * 1.3) * k) / steps;
-      const p = fromUV(u, v);
-      if (!pointInPolygon(p, poly)) continue;
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
-    }
-    if (!Number.isFinite(lo) || hi - lo < 18) continue;
-    for (const f of depth) {
-      const p = fromUV(u, lo + (hi - lo) * f);
-      // 楼梯在 x≈170，工位从楼板内部开始，并且离开发光前缘。
-      if (p.x < 292) continue;
-      if (!pointInPolygon(p, poly)) continue;
+  // 两排，中间是过道。u 从楼梯右侧铺到楼的右缘。
+  for (const v of [0, 1]) {
+    for (let u = 0; u < 10; u++) {
+      const p = onFloor(cfg, u, v);
+      if (p.x < 300 || p.x > 830) continue;
+      if (!pointInPolygon(p, cfg.polygon)) continue;
       const lip = cfg.edges[0];
-      if (lip && frontAt(lip, p.x) - p.y < 20) continue;
-      spots.push(p);
+      if (lip && frontAt(lip, p.x) - p.y < 16) continue;
+      add(cfg.level, p.x, p.y, kind, u, v, dual);
     }
   }
-  const cap = cfg.stations > 0 ? cfg.stations : spots.length;
-  const kept = spots.length <= cap ? spots : spots.filter((_, index) => {
-    const slot = Math.round((index * (cap - 1)) / Math.max(1, spots.length - 1));
-    const prev = index === 0 ? -1 : Math.round(((index - 1) * (cap - 1)) / Math.max(1, spots.length - 1));
-    return slot !== prev;
-  });
-  for (const p of kept) add(cfg.level, p.x, p.y, kind, dual);
 }
 
 function buildProps(floors: readonly FloorConfig[]): Prop[] {
   const props: Prop[] = [];
   let phase = 0;
-  const add = (floor: number, x: number, y: number, kind: PropKind, dual = false) => {
-    props.push({ floor, x, y, kind, phase: phase++, dual });
+  const add = (floor: number, x: number, y: number, kind: PropKind, u = 0, v = 0, dual = false) => {
+    props.push({ floor, x, y, u, v, kind, phase: phase++, dual });
   };
   for (const cfg of floors) {
     if (cfg.type === 'sales' || cfg.type === 'it' || cfg.type === 'rnd') {
@@ -300,38 +249,28 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
   return props;
 }
 
-function randomInside(floor: FloorConfig, seed: number): Vec2 {
-  let s = seed >>> 0;
-  const box = bounds(floor);
-  for (let n = 0; n < 40; n++) {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    const x = box.minX + 14 + ((s % 1000) / 1000) * (box.maxX - box.minX - 28);
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    const y = box.minY + 12 + ((s % 1000) / 1000) * (box.maxY - box.minY - 24);
-    const head = { x, y: y - 26 };
-    if (pointInPolygon({ x, y }, floor.polygon) && pointInPolygon(head, floor.polygon)) return { x, y };
-  }
-  return { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
-}
-
 function buildActors(floors: readonly FloorConfig[], props: readonly Prop[]): Actor[] {
   const actors: Actor[] = [];
   let seed = 11;
-  const add = (floor: number, x: number, y: number, pose: Pose, role: number, desk = -1) => {
+  const add = (cfg: FloorConfig, u: number, v: number, pose: Pose, role: number, desk = -1) => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const p = onFloor(cfg, u, v);
     actors.push({
-      floor,
-      x,
-      y,
-      tx: x,
-      ty: y,
+      floor: cfg.level,
+      x: p.x,
+      y: p.y,
+      u,
+      v,
+      tu: u,
+      tv: v,
       pose,
       home: pose,
-      timer: 1 + (seed % 5) * 0.4,
+      timer: 1.5 + (seed % 5) * 0.6,
       phase: (seed % 20) / 5,
       seed,
       role,
       desk,
+      axis: 0,
     });
   };
   for (const cfg of floors) {
@@ -352,37 +291,18 @@ function buildActors(floors: readonly FloorConfig[], props: readonly Prop[]): Ac
       const pick = desks[order[i] ?? 0];
       if (!pick) continue;
       const pose: Pose = cfg.type === 'sales' && i === 0 ? 'phone' : 'sit';
-      add(cfg.level, pick.p.x, pick.p.y + SEAT, pose, 0, pick.index);
+      add(cfg, pick.p.u, pick.p.v, pose, 0, pick.index);
     }
-    if (cfg.type === 'lounge') {
-      const pong = props.find((p) => p.floor === cfg.level && p.kind === 'pong');
-      if (pong) {
-        add(cfg.level, pong.x - 12, pong.y + 4, 'swing', 3);
-        add(cfg.level, pong.x + 12, pong.y + 4, 'swing', 3);
-      }
-      const sofa = props.find((p) => p.floor === cfg.level && p.kind === 'sofa');
-      if (sofa) add(cfg.level, sofa.x + 8, sofa.y + 8, 'chat', 3);
-    }
-    if (cfg.type === 'lobby') {
-      for (let i = 0; i < cfg.people; i++) {
-        const p = randomInside(cfg, 40 + i * 17);
-        add(cfg.level, p.x, p.y, 'walk', 2);
-      }
-    } else if (cfg.type !== 'vacant') {
-      for (let i = 0; i < cfg.people; i++) {
-        const p = randomInside(cfg, 90 + cfg.level * 13 + i);
-        add(cfg.level, p.x, p.y, 'walk', 1);
-      }
+    const walkers = Math.min(3, cfg.people);
+    for (let i = 0; i < walkers; i++) {
+      const u = 1 + ((cfg.level * 3 + i * 4) % 7);
+      add(cfg, u, 0.45, 'walk', cfg.type === 'lobby' ? 2 : 1);
     }
   }
   for (const actor of actors) {
-    if (actor.home === 'walk') {
-      const floor = floors.find((f) => f.level === actor.floor);
-      if (!floor) continue;
-      const next = randomInside(floor, actor.seed + 3);
-      actor.tx = next.x;
-      actor.ty = next.y;
-    }
+    if (actor.home !== 'walk') continue;
+    actor.tu = (actor.seed % 8) + 0.2;
+    actor.tv = 0.45;
   }
   return actors;
 }
@@ -444,46 +364,58 @@ function drawRun(g: CanvasRenderingContext2D, run: Run, now: number, hot: boolea
 
 function strokeBox(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void {
   g.fillStyle = NAVY;
-  g.fillRect(x, y, w, h);
   g.strokeStyle = EDGE;
   g.lineWidth = 1;
-  g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  g.beginPath();
+  g.moveTo(x, y);
+  g.lineTo(x + w * 0.72, y + h * 0.42);
+  g.lineTo(x + w * 0.95, y - h * 0.12);
+  g.lineTo(x + w * 0.22, y - h * 0.5);
+  g.closePath();
+  g.fill();
+  g.stroke();
 }
 
 function drawProp(g: CanvasRenderingContext2D, prop: Prop, now: number, hot: boolean): void {
   const { x, y } = prop;
   const blink = ((now / 220) | 0) + prop.phase;
   if (prop.kind === 'desk' || prop.kind === 'ghost') {
-    g.globalAlpha = prop.kind === 'ghost' ? 0.35 : 1;
+    g.globalAlpha = prop.kind === 'ghost' ? 0.32 : 1;
     g.fillStyle = NAVY;
     g.strokeStyle = EDGE;
     g.lineWidth = 1;
-    // 平行四边形跟楼板两条斜边对齐：前缘往右下，侧边往右上。
     g.beginPath();
-    g.moveTo(x - 11, y + 2);
-    g.lineTo(x + 7, y + 9);
-    g.lineTo(x + 15, y - 1);
-    g.lineTo(x - 3, y - 8);
+    g.moveTo(x - 11, y - 1);
+    g.lineTo(x + 7, y + 6);
+    g.lineTo(x + 13, y + 1);
+    g.lineTo(x - 5, y - 6);
     g.closePath();
     g.fill();
     g.stroke();
-    const on = hot || blink % 5 === 0;
+    g.beginPath();
+    g.moveTo(x - 3, y + 6);
+    g.lineTo(x + 4, y + 9);
+    g.lineTo(x + 6, y + 6);
+    g.lineTo(x - 1, y + 3);
+    g.closePath();
+    g.stroke();
+    const on = prop.kind === 'desk' && (hot || blink % 5 === 0);
     const screen = (sx: number, sy: number) => {
       g.fillStyle = on ? WHITE : SCREEN;
       g.beginPath();
       g.moveTo(sx, sy);
-      g.lineTo(sx + 6, sy + 2);
-      g.lineTo(sx + 8, sy - 3);
-      g.lineTo(sx + 2, sy - 5);
+      g.lineTo(sx + 5, sy + 2);
+      g.lineTo(sx + 5, sy - 3);
+      g.lineTo(sx, sy - 5);
       g.closePath();
       g.fill();
       g.stroke();
     };
     if (prop.dual) {
-      screen(x - 4, y - 6);
-      screen(x + 3, y - 4);
+      screen(x - 6, y - 8);
+      screen(x + 1, y - 9);
     } else {
-      screen(x - 1, y - 5);
+      screen(x - 2, y - 8);
     }
     g.globalAlpha = 1;
     return;
@@ -579,43 +511,38 @@ function drawProp(g: CanvasRenderingContext2D, prop: Prop, now: number, hot: boo
 }
 
 function drawActor(g: CanvasRenderingContext2D, actor: Actor): void {
-  const bob = actor.pose === 'walk' ? Math.abs(Math.sin(actor.phase * 8)) * 2 : actor.pose === 'sit' ? 0 : Math.sin(actor.phase * 3) * 0.6;
-  const y = actor.y - bob;
   const x = actor.x;
-  const typing = actor.pose === 'sit' || actor.pose === 'phone';
-  const arm = typing ? Math.sin(actor.phase * 10) * 2 : 0;
   g.lineWidth = 1;
-  g.strokeStyle = '#062038';
-  g.fillStyle = GLOW;
-  const step = actor.pose === 'walk' ? Math.sin(actor.phase * 8) * 2 : 0;
-  g.fillRect(x - 4, y - 10, 3, 10);
-  g.fillRect(x + 1 + step, y - 10, 3, 10);
-  g.strokeRect(x - 4.5, y - 10.5, 4, 11);
-  g.strokeRect(x + 0.5 + step, y - 10.5, 4, 11);
-  g.fillRect(x - 6, y - 20, 12, 10);
-  g.strokeRect(x - 6.5, y - 20.5, 13, 11);
-  if (typing) {
+  if (actor.pose === 'sit' || actor.pose === 'phone') {
+    const bob = Math.sin(actor.phase * 7) * 0.7;
+    const y = actor.y - 7 + bob;
+    g.fillStyle = GLOW;
+    g.strokeStyle = EDGE;
+    g.fillRect(x - 5, y - 5, 10, 4);
+    g.strokeRect(x - 5.5, y - 5.5, 11, 5);
     g.fillStyle = WHITE;
-    g.fillRect(x - 7, y - 14 + arm, 3, 2);
-    g.fillRect(x + 4, y - 14 - arm, 3, 2);
+    g.fillRect(x - 3, y - 11, 6, 6);
+    g.strokeRect(x - 3.5, y - 11.5, 7, 7);
+    if (actor.pose === 'phone') {
+      g.fillStyle = SCREEN;
+      g.fillRect(x + 3, y - 8, 2, 4);
+    }
+    return;
   }
-  g.fillStyle = WHITE;
-  g.fillRect(x - 3, y - 26, 7, 6);
+  const bob = actor.pose === 'walk' ? Math.abs(Math.sin(actor.phase * 6)) * 1.2 : 0;
+  const y = actor.y - bob;
+  const step = actor.pose === 'walk' ? Math.sin(actor.phase * 6) * 1.5 : 0;
+  g.fillStyle = GLOW;
   g.strokeStyle = EDGE;
-  g.strokeRect(x - 3.5, y - 26.5, 8, 7);
-  if (actor.pose === 'phone') {
-    g.fillStyle = SCREEN;
-    g.fillRect(x + 4, y - 22, 3, 5);
-  }
-  if (actor.pose === 'cheer' || actor.pose === 'swing') {
-    g.strokeStyle = WHITE;
-    g.beginPath();
-    g.moveTo(x - 6, y - 20);
-    g.lineTo(x - 10, y - 28);
-    g.moveTo(x + 6, y - 20);
-    g.lineTo(x + 10, y - 28);
-    g.stroke();
-  }
+  g.fillRect(x - 3, y - 8, 2, 8);
+  g.fillRect(x + 1 + step, y - 8, 2, 8);
+  g.strokeRect(x - 3.5, y - 8.5, 3, 9);
+  g.strokeRect(x + 0.5 + step, y - 8.5, 3, 9);
+  g.fillRect(x - 5, y - 16, 10, 8);
+  g.strokeRect(x - 5.5, y - 16.5, 11, 9);
+  g.fillStyle = WHITE;
+  g.fillRect(x - 3, y - 22, 6, 6);
+  g.strokeRect(x - 3.5, y - 22.5, 7, 7);
 }
 
 export function createPlate(configs: readonly FloorConfig[], options?: { debug?: boolean }): PlateView {
@@ -665,10 +592,14 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
         if (!actor || !pick || i >= want) continue;
         actor.desk = pick.index;
         actor.home = cfg.type === 'sales' && i === 0 ? 'phone' : 'sit';
-        actor.pose = 'walk';
-        actor.tx = pick.p.x;
-        actor.ty = pick.p.y + SEAT;
-        actor.timer = 6;
+        actor.pose = actor.home;
+        actor.u = pick.p.u;
+        actor.v = pick.p.v;
+        actor.tu = pick.p.u;
+        actor.tv = pick.p.v;
+        const p = onFloor(cfg, actor.u, actor.v);
+        actor.x = p.x;
+        actor.y = p.y;
       }
     }
   }
@@ -713,79 +644,70 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
 
   function stepActors(dt: number, now: number): void {
     reshuffle(now);
+    const speed = 20;
     for (const actor of actors) {
       actor.phase += dt;
+      if (actor.pose === 'cheer') {
+        actor.timer -= dt;
+        if (actor.timer <= 0) actor.pose = actor.home;
+        continue;
+      }
+      if (actor.home !== 'walk') continue;
       actor.timer -= dt;
       const floor = byLevel(actor.floor);
       if (!floor) continue;
-      if (actor.pose === 'walk' || actor.home === 'walk') {
-        const dx = actor.tx - actor.x;
-        const dy = actor.ty - actor.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 1.2) {
-          actor.x = actor.tx;
-          actor.y = actor.ty;
-          if (actor.role === 0 && actor.home !== 'walk') {
-            const desk = props[actor.desk];
-            const seated = desk !== undefined && Math.hypot(actor.x - desk.x, actor.y - (desk.y + SEAT)) < 6;
-            if (seated) {
-              actor.pose = actor.home;
-              actor.timer = 8;
-            } else if (desk) {
-              actor.tx = desk.x;
-              actor.ty = desk.y + SEAT;
-              actor.pose = 'walk';
-              actor.timer = 4;
-            }
-            continue;
-          }
-          const next = randomInside(floor, (actor.seed + (actor.phase * 10) | 0) >>> 0);
-          actor.tx = next.x;
-          actor.ty = next.y;
+      const du = actor.tu - actor.u;
+      const dv = actor.tv - actor.v;
+      if (Math.abs(du) < 0.04 && Math.abs(dv) < 0.04) {
+        actor.u = actor.tu;
+        actor.v = actor.tv;
+        actor.pose = 'chat';
+        if (actor.timer <= 0) {
           actor.seed = (Math.imul(actor.seed, 1664525) + 1013904223) >>> 0;
-          if (actor.role === 1 && actor.seed % 11 === 0) {
-            const other = floors.find((f) => f.level === actor.floor + (actor.seed % 2 === 0 ? 1 : -1));
-            if (other) {
-              const hop = randomInside(other, actor.seed);
-              actor.floor = other.level;
-              actor.x = hop.x;
-              actor.y = hop.y;
-              actor.tx = hop.x;
-              actor.ty = hop.y;
-            }
-          }
-        } else {
-          const step = Math.min(18 * dt, dist);
-          const nx = actor.x + (dx / dist) * step;
-          const ny = actor.y + (dy / dist) * step;
-          if (pointInPolygon({ x: nx, y: ny }, floor.polygon)) {
-            actor.x = nx;
-            actor.y = ny;
+          if (actor.axis === 0) {
+            actor.tu = 0.4 + (actor.seed % 80) / 10;
+            actor.tv = 0.45;
           } else {
-            const next = randomInside(floor, actor.seed + 9);
-            actor.tx = next.x;
-            actor.ty = next.y;
+            actor.tu = actor.u;
+            actor.tv = actor.seed % 2 === 0 ? 0.05 : 0.9;
+            actor.axis = 0;
           }
-        }
-        actor.pose = 'walk';
-      } else if (actor.timer <= 0 && actor.pose !== 'swing') {
-        actor.seed = (Math.imul(actor.seed, 1664525) + 1013904223) >>> 0;
-        if (actor.home === 'sit' && actor.seed % 7 === 0) {
-          const next = randomInside(floor, actor.seed);
-          actor.tx = next.x;
-          actor.ty = next.y;
+          if (actor.seed % 3 === 0) actor.axis = 1;
+          actor.timer = 2 + (actor.seed % 3);
           actor.pose = 'walk';
-          actor.timer = 3;
-        } else {
-          actor.pose = actor.home;
-          actor.timer = 1.5 + (actor.seed % 4);
         }
+      } else {
+        const stepU = (speed / 52) * dt;
+        const stepV = (speed / 22) * dt;
+        if (Math.abs(du) >= 0.04) actor.u += Math.sign(du) * Math.min(stepU, Math.abs(du));
+        else actor.v += Math.sign(dv) * Math.min(stepV, Math.abs(dv));
+        actor.u = Math.max(0, Math.min(9, actor.u));
+        actor.v = Math.max(0, Math.min(1, actor.v));
+        actor.pose = 'walk';
       }
-      if (actor.pose === 'cheer' && actor.timer <= 0) {
-        actor.pose = actor.home;
-        actor.timer = 2;
+      const p = onFloor(floor, actor.u, actor.v);
+      if (pointInPolygon(p, floor.polygon)) {
+        actor.x = p.x;
+        actor.y = p.y;
       }
     }
+  }
+
+  function stampPlate(g: CanvasRenderingContext2D, poly: readonly Vec2[]): void {
+    if (!ready || poly.length < 3) return;
+    g.save();
+    g.beginPath();
+    const first = poly[0];
+    if (first) g.moveTo(first.x, first.y);
+    for (let i = 1; i < poly.length; i++) {
+      const p = poly[i];
+      if (p) g.lineTo(p.x, p.y);
+    }
+    g.closePath();
+    g.clip();
+    g.imageSmoothingEnabled = true;
+    g.drawImage(image, 0, 0, PLATE_SIZE, PLATE_SIZE);
+    g.restore();
   }
 
   function drawOverlay(now: number): void {
@@ -809,19 +731,22 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
       }
       ctx.closePath();
       ctx.clip();
-      const items: { y: number; draw: () => void }[] = [];
+      const items: { depth: number; draw: () => void }[] = [];
       for (const prop of props) {
         if (prop.floor !== floor.level) continue;
-        items.push({ y: prop.y, draw: () => drawProp(ctx, prop, now, hot) });
+        items.push({ depth: prop.u + prop.v, draw: () => drawProp(ctx, prop, now, hot) });
       }
       for (const actor of actors) {
         if (actor.floor !== floor.level) continue;
         if (!pointInPolygon({ x: actor.x, y: actor.y }, floor.polygon)) continue;
-        items.push({ y: actor.y, draw: () => drawActor(ctx, actor) });
+        items.push({ depth: actor.u + actor.v + 0.15, draw: () => drawActor(ctx, actor) });
       }
-      items.sort((a, b) => a.y - b.y);
+      items.sort((a, b) => a.depth - b.depth);
       for (const item of items) item.draw();
       ctx.restore();
+      stampPlate(ctx, floor.mask);
+      const above = byLevel(floor.level + 1);
+      if (above) stampPlate(ctx, above.mask);
       if (hot && floor.type === 'sales') {
         paintText(ctx, 'DEAL', floor.origin.x + 20, floor.origin.y + 8, 2, WHITE);
       }
@@ -867,6 +792,14 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
       }
       g.closePath();
       g.stroke();
+      g.fillStyle = '#ffe14a';
+      for (let u = 0; u < 10; u++) {
+        for (const v of [0, 0.45, 1]) {
+          const p = onFloor(floor, u, v);
+          if (!pointInPolygon(p, floor.polygon)) continue;
+          g.fillRect(p.x - 1, p.y - 1, 2, 2);
+        }
+      }
       g.fillStyle = '#ffffff';
       for (const prop of props) {
         if (prop.floor !== floor.level) continue;
@@ -943,16 +876,15 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
         const floor = byLevel(ev.level);
         const who = actors.find((a) => a.floor === ev.level && a.role === 2);
         if (floor && who) {
-          const box = bounds(floor);
-          const door = { x: box.minX + (box.maxX - box.minX) * 0.32, y: box.maxY - 16 };
-          const dest = randomInside(floor, who.seed + 4);
-          if (pointInPolygon(door, floor.polygon)) {
-            who.x = door.x;
-            who.y = door.y;
-          }
-          who.tx = dest.x;
-          who.ty = dest.y;
+          who.u = 1;
+          who.v = 0.45;
+          who.tu = 6;
+          who.tv = 0.45;
           who.pose = 'walk';
+          who.timer = 0.4;
+          const p = onFloor(floor, who.u, who.v);
+          who.x = p.x;
+          who.y = p.y;
         }
       }
     },
