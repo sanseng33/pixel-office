@@ -17,7 +17,12 @@ export type FurnKind =
   | 'board'
   | 'room'
   | 'cable'
-  | 'marker';
+  | 'marker'
+  | 'file'
+  | 'print'
+  | 'booth'
+  | 'shelf'
+  | 'chairs';
 
 export interface Furn {
   kind: FurnKind;

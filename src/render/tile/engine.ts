@@ -314,6 +314,7 @@ export async function createTileFloor(
       for (let i = 0; i < folk.length; i++) {
         const f = folk[i];
         if (!f || !notchOpen(f.x, f.y)) continue;
+        if (f.roam && !lay.walkable(f.x, f.y)) continue;
         spawn(f.x, f.y, f.pose, f.roam, 1, f.face, 20 + i);
       }
     }
@@ -742,9 +743,9 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       const B = raise(b, h);
       const C = raise(c, h);
       const D = raise(d, h);
-      poly(g, [b, c, C, B], 0x123044, 0.28, ICE, 0.95);
-      poly(g, [d, c, C, D], 0x10283c, 0.22, ICE, 0.9);
-      poly(g, [A, B, C, D], 0x163044, 0.4, WHITE, 0.95);
+      poly(g, [b, c, C, B], 0x0c2034, 0.88, ICE, 0.95);
+      poly(g, [d, c, C, D], 0x0c2034, 0.82, ICE, 0.9);
+      poly(g, [A, B, C, D], 0x10283c, 0.94, WHITE, 0.95);
       for (const p of [a, b, c, d]) {
         const top = raise(p, h);
         g.rect(Math.round(p.x), Math.round(top.y), u(1), Math.max(2, Math.round(p.y - top.y))).fill({ color: ICE });
@@ -755,6 +756,57 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       for (let i = 0; i < item.w; i++) {
         const p = iso(item.x + i + 0.5, item.y + 0.5, floorZ);
         g.rect(Math.round(p.x), Math.round(p.y), u(3), u(1)).fill({ color: ICE });
+      }
+      return;
+    }
+    if (item.kind === 'file') {
+      const [a, b, c, d] = corners(item.x + 0.18, item.y + 0.22, item.x + 0.82, item.y + 0.82, floorZ);
+      volume(g, a, b, c, d, 0, u(11));
+      const mid = raise(iso(item.x + 0.5, item.y + 0.5, floorZ), u(7));
+      g.rect(Math.round(mid.x) - u(3), Math.round(mid.y), u(6), u(1)).fill({ color: ICE });
+      g.rect(Math.round(mid.x) - u(3), Math.round(mid.y) + u(3), u(6), u(1)).fill({ color: ICE });
+      return;
+    }
+    if (item.kind === 'print') {
+      const [a, b, c, d] = corners(item.x + 0.22, item.y + 0.28, item.x + 0.78, item.y + 0.78, floorZ);
+      volume(g, a, b, c, d, 0, u(6));
+      const paper = raise(iso(item.x + 0.5, item.y + 0.5, floorZ), u(6));
+      g.rect(Math.round(paper.x) - u(2), Math.round(paper.y) - u(3), u(4), u(2)).fill({ color: WHITE });
+      return;
+    }
+    if (item.kind === 'booth') {
+      const [a, b, c, d] = corners(item.x + 0.16, item.y + 0.16, item.x + 0.84, item.y + 0.84, floorZ);
+      const h = u(16);
+      const A = raise(a, h);
+      const B = raise(b, h);
+      const C = raise(c, h);
+      const D = raise(d, h);
+      poly(g, [b, c, C, B], 0x123044, 0.5, ICE, 0.95);
+      poly(g, [d, c, C, D], 0x10283c, 0.45, ICE, 0.9);
+      poly(g, [A, B, C, D], 0x10283c, 0.7, WHITE, 0.95);
+      for (const p of [a, b, c, d]) {
+        const top = raise(p, h);
+        g.rect(Math.round(p.x), Math.round(top.y), u(1), Math.max(2, Math.round(p.y - top.y))).fill({ color: ICE });
+      }
+      return;
+    }
+    if (item.kind === 'shelf') {
+      const [a, b, c, d] = corners(item.x + 0.1, item.y + 0.28, item.x + item.w - 0.1, item.y + 0.78, floorZ);
+      volume(g, a, b, c, d, 0, u(12));
+      const mid = raise(iso(item.x + item.w / 2, item.y + 0.5, floorZ), u(8));
+      g.rect(Math.round(mid.x) - u(4), Math.round(mid.y), u(8), u(1)).fill({ color: ICE });
+      g.rect(Math.round(mid.x) - u(4), Math.round(mid.y) + u(3), u(8), u(1)).fill({ color: WHITE });
+      return;
+    }
+    if (item.kind === 'chairs') {
+      const base = iso(item.x + 0.5, item.y + 0.5, floorZ);
+      const x = Math.round(base.x);
+      const y = Math.round(base.y);
+      for (let i = 0; i < 3; i++) {
+        const yy = y - u(4) - i * u(3);
+        g.rect(x - u(3), yy, u(6), u(2)).fill({ color: INK });
+        g.rect(x - u(3), yy, u(6), u(1)).fill({ color: WHITE });
+        g.rect(x - u(3), yy + u(1), u(6), u(1)).fill({ color: ICE });
       }
       return;
     }
@@ -808,27 +860,18 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
     if (!top || !low) return;
     originX = top.originX;
     originY = top.originY - roofGap;
-    const lipH = 3;
     for (let y = 0; y < PLAN; y++) {
       for (let x = 0; x < PLAN; x++) {
         if (!towerSolid(x, y)) continue;
-        if (!towerSolid(x, y - 1)) poly(world, face(x, y, x + 1, y), 0x071018, 1, ICE, 0.55);
-        if (!towerSolid(x + 1, y)) poly(world, face(x + 1, y, x + 1, y + 1), 0x071018, 1, ICE, 0.45);
-        if (!towerSolid(x, y + 1)) poly(world, face(x, y + 1, x + 1, y + 1), 0x0a1828, 1, ICE, 0.55);
-        if (!towerSolid(x - 1, y)) poly(world, face(x, y, x, y + 1), 0x071018, 1, ICE, 0.45);
+        if (!towerSolid(x, y - 1)) poly(world, face(x, y, x + 1, y), 0x071018, 1);
+        if (!towerSolid(x + 1, y)) poly(world, face(x + 1, y, x + 1, y + 1), 0x071018, 1);
+        if (!towerSolid(x, y + 1)) poly(world, face(x, y + 1, x + 1, y + 1), 0x0a1828, 1);
+        if (!towerSolid(x - 1, y)) poly(world, face(x, y, x, y + 1), 0x071018, 1);
         const mark = (x + y) % 2 === 0;
         poly(world, tilePts(x, y, floorZ), 0x0a1422, 1, mark ? 0x163044 : undefined, 0.18);
-        const cap = (x0: number, y0: number, x1: number, y1: number) => {
-          const a = iso(x0, y0, floorZ);
-          const b = iso(x1, y1, floorZ);
-          poly(world, [a, b, raise(b, lipH), raise(a, lipH)], 0x071018, 1, ICE, 0.75);
-        };
-        if (!towerSolid(x, y - 1)) cap(x, y, x + 1, y);
-        if (!towerSolid(x + 1, y)) cap(x + 1, y, x + 1, y + 1);
-        if (!towerSolid(x, y + 1)) cap(x, y + 1, x + 1, y + 1);
-        if (!towerSolid(x - 1, y)) cap(x, y, x, y + 1);
       }
     }
+    strokeLoop(world, buildOutline((x, y) => towerSolid(x, y), iso), ICE);
     for (const spot of [iso(2.4, 6.4, floorZ), iso(10.8, 3.4, floorZ)]) {
       const ax = Math.round(spot.x);
       const ay = Math.round(spot.y) - 8;
@@ -889,136 +932,219 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
   ): { x: number; y: number; pose: Person['pose']; roam: boolean; face: 1 | -1 }[] {
     if (role === 'lobby') {
       return [
-        { x: 4, y: 11, pose: 'sit', roam: false, face: 1 },
-        { x: 3, y: 12, pose: 'walk', roam: true, face: 1 },
-        { x: 7, y: 10, pose: 'walk', roam: true, face: 1 },
-        { x: 5, y: 12, pose: 'walk', roam: true, face: 1 },
-        { x: 9, y: 6, pose: 'walk', roam: true, face: 1 },
+        { x: 3, y: 11, pose: 'sit', roam: false, face: 1 },
+        { x: 2, y: 11, pose: 'walk', roam: true, face: 1 },
+        { x: 7, y: 11, pose: 'walk', roam: true, face: 1 },
+        { x: 8, y: 7, pose: 'walk', roam: true, face: 1 },
+        { x: 10, y: 7, pose: 'walk', roam: true, face: 1 },
         { x: 12, y: 6, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'lounge') {
       return [
-        { x: 5, y: 12, pose: 'chat', roam: false, face: 1 },
-        { x: 3, y: 12, pose: 'chat', roam: false, face: 1 },
-        { x: 9, y: 6, pose: 'chat', roam: false, face: -1 },
+        { x: 3, y: 11, pose: 'chat', roam: false, face: 1 },
+        { x: 6, y: 11, pose: 'chat', roam: false, face: 1 },
+        { x: 8, y: 7, pose: 'chat', roam: false, face: -1 },
         { x: 11, y: 7, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'sales') {
       return [
-        { x: 3, y: 11, pose: 'sit', roam: false, face: 1 },
-        { x: 5, y: 12, pose: 'sit', roam: false, face: 1 },
-        { x: 10, y: 5, pose: 'sit', roam: false, face: -1 },
-        { x: 8, y: 7, pose: 'walk', roam: true, face: 1 },
+        { x: 2, y: 12, pose: 'sit', roam: false, face: 1 },
+        { x: 6, y: 12, pose: 'sit', roam: false, face: 1 },
+        { x: 10, y: 6, pose: 'sit', roam: false, face: -1 },
+        { x: 9, y: 7, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'it') {
       return [
-        { x: 4, y: 11, pose: 'sit', roam: false, face: 1 },
-        { x: 6, y: 12, pose: 'sit', roam: false, face: 1 },
+        { x: 2, y: 12, pose: 'sit', roam: false, face: 1 },
+        { x: 5, y: 12, pose: 'sit', roam: false, face: 1 },
       ];
     }
     if (role === 'vacant') return [];
     if (level <= 5) {
       return [
+        { x: 2, y: 12, pose: 'sit', roam: false, face: 1 },
         { x: 4, y: 12, pose: 'sit', roam: false, face: 1 },
-        { x: 6, y: 11, pose: 'sit', roam: false, face: 1 },
-        { x: 10, y: 6, pose: 'sit', roam: false, face: -1 },
-        { x: 9, y: 7, pose: 'walk', roam: true, face: 1 },
+        { x: 8, y: 6, pose: 'sit', roam: false, face: 1 },
+        { x: 7, y: 8, pose: 'walk', roam: true, face: 1 },
       ];
     }
     return [
-      { x: 4, y: 11, pose: 'sit', roam: false, face: 1 },
-      { x: 6, y: 10, pose: 'sit', roam: false, face: -1 },
-      { x: 3, y: 12, pose: 'sit', roam: false, face: 1 },
-      { x: 9, y: 6, pose: 'sit', roam: false, face: -1 },
-      { x: 7, y: 9, pose: 'walk', roam: true, face: 1 },
+      { x: 2, y: 12, pose: 'sit', roam: false, face: 1 },
+      { x: 4, y: 12, pose: 'sit', roam: false, face: 1 },
+      { x: 8, y: 6, pose: 'sit', roam: false, face: 1 },
+      { x: 10, y: 5, pose: 'sit', roam: false, face: 1 },
+      { x: 7, y: 8, pose: 'walk', roam: true, face: 1 },
     ];
   }
 
+  function footprintTiles(item: Furn): { x: number; y: number }[] {
+    const depth = item.kind === 'room' ? 2 : 1;
+    const tiles: { x: number; y: number }[] = [];
+    for (let j = 0; j < depth; j++) {
+      for (let i = 0; i < item.w; i++) tiles.push({ x: item.x + i, y: item.y + j });
+    }
+    if (item.kind === 'desk') {
+      const face = item.face ?? 1;
+      for (let i = 0; i < item.w; i++) tiles.push({ x: item.x + i, y: item.y + face });
+    }
+    return tiles;
+  }
+
+  function blockedTiles(item: Furn): { x: number; y: number }[] {
+    const tiles = footprintTiles(item);
+    if (item.kind === 'room' || item.kind === 'booth') {
+      const depth = item.kind === 'room' ? 2 : 1;
+      for (let y = item.y - 1; y <= item.y + depth; y++) {
+        for (let x = item.x - 1; x <= item.x + item.w; x++) tiles.push({ x, y });
+      }
+    }
+    return tiles;
+  }
+
+  function fitsNotch(item: Furn): boolean {
+    return footprintTiles(item).every((t) => towerSolid(t.x, t.y) && t.x >= 1 && t.y >= 1 && t.x <= 12 && t.y <= 13);
+  }
+
   function stackAccents(role: FloorType, level = 7): Furn[] {
+    const rnd: Furn[] = level <= 5
+      ? [
+          { kind: 'desk', x: 2, y: 12, w: 2, face: 1 },
+          { kind: 'desk', x: 2, y: 11, w: 2, face: -1 },
+          { kind: 'desk', x: 4, y: 12, w: 2, face: 1 },
+          { kind: 'desk', x: 4, y: 11, w: 2, face: -1 },
+          { kind: 'desk', x: 6, y: 12, w: 2, face: 1 },
+          { kind: 'desk', x: 8, y: 5, w: 2, face: -1 },
+          { kind: 'desk', x: 8, y: 6, w: 2, face: 1 },
+          { kind: 'desk', x: 10, y: 5, w: 2, face: -1 },
+          { kind: 'desk', x: 10, y: 6, w: 2, face: 1 },
+          { kind: 'file', x: 6, y: 11, w: 1 },
+          { kind: 'file', x: 7, y: 11, w: 1 },
+          { kind: 'file', x: 12, y: 6, w: 1 },
+          { kind: 'board', x: 6, y: 10, w: 1 },
+          { kind: 'board', x: 12, y: 7, w: 1 },
+          { kind: 'plant', x: 7, y: 10, w: 1 },
+          { kind: 'plant', x: 12, y: 4, w: 1 },
+          { kind: 'print', x: 5, y: 9, w: 1 },
+        ]
+      : [
+          { kind: 'desk', x: 2, y: 12, w: 2, face: 1 },
+          { kind: 'desk', x: 2, y: 11, w: 2, face: -1 },
+          { kind: 'desk', x: 4, y: 12, w: 2, face: 1 },
+          { kind: 'desk', x: 4, y: 11, w: 2, face: -1 },
+          { kind: 'desk', x: 6, y: 12, w: 2, face: 1 },
+          { kind: 'desk', x: 8, y: 5, w: 2, face: -1 },
+          { kind: 'desk', x: 8, y: 6, w: 2, face: 1 },
+          { kind: 'desk', x: 10, y: 4, w: 2, face: -1 },
+          { kind: 'desk', x: 10, y: 5, w: 2, face: 1 },
+          { kind: 'file', x: 6, y: 11, w: 1 },
+          { kind: 'file', x: 7, y: 11, w: 1 },
+          { kind: 'file', x: 12, y: 6, w: 1 },
+          { kind: 'file', x: 12, y: 5, w: 1 },
+          { kind: 'board', x: 6, y: 10, w: 2 },
+          { kind: 'board', x: 11, y: 7, w: 2 },
+          { kind: 'plant', x: 7, y: 9, w: 1 },
+          { kind: 'plant', x: 12, y: 3, w: 1 },
+          { kind: 'print', x: 6, y: 9, w: 1 },
+        ];
     if (role === 'lobby') {
       return [
-        { kind: 'desk', x: 4, y: 11, w: 3, face: 1 },
+        { kind: 'desk', x: 3, y: 11, w: 3, face: 1 },
+        { kind: 'gate', x: 2, y: 12, w: 1 },
+        { kind: 'gate', x: 6, y: 12, w: 1 },
+        { kind: 'sofa', x: 2, y: 10, w: 2 },
+        { kind: 'sofa', x: 6, y: 10, w: 2 },
+        { kind: 'table', x: 4, y: 10, w: 1 },
         { kind: 'screen', x: 9, y: 5, w: 2 },
         { kind: 'screen', x: 11, y: 4, w: 2 },
-        { kind: 'gate', x: 2, y: 12, w: 1 },
-        { kind: 'gate', x: 7, y: 12, w: 1 },
+        { kind: 'plant', x: 7, y: 12, w: 1 },
+        { kind: 'plant', x: 7, y: 10, w: 1 },
         { kind: 'plant', x: 8, y: 6, w: 1 },
+        { kind: 'plant', x: 12, y: 7, w: 1 },
       ];
     }
     if (role === 'lounge') {
       return [
+        { kind: 'sofa', x: 2, y: 12, w: 2 },
         { kind: 'sofa', x: 4, y: 11, w: 2 },
-        { kind: 'coffee', x: 6, y: 10, w: 2 },
-        { kind: 'pong', x: 10, y: 5, w: 3 },
+        { kind: 'sofa', x: 6, y: 12, w: 2 },
+        { kind: 'table', x: 6, y: 10, w: 1 },
+        { kind: 'table', x: 7, y: 9, w: 1 },
+        { kind: 'shelf', x: 4, y: 10, w: 2 },
+        { kind: 'coffee', x: 9, y: 6, w: 2 },
+        { kind: 'pong', x: 10, y: 4, w: 3 },
         { kind: 'plant', x: 7, y: 12, w: 1 },
-        { kind: 'plant', x: 12, y: 4, w: 1 },
+        { kind: 'plant', x: 5, y: 12, w: 1 },
+        { kind: 'plant', x: 8, y: 6, w: 1 },
+        { kind: 'plant', x: 12, y: 7, w: 1 },
       ];
     }
     if (role === 'sales') {
       return [
-        { kind: 'desk', x: 3, y: 11, w: 2, face: 1 },
-        { kind: 'desk', x: 5, y: 12, w: 2, face: 1 },
-        { kind: 'desk', x: 10, y: 5, w: 2, face: -1 },
-        { kind: 'room', x: 6, y: 9, w: 2 },
-        { kind: 'board', x: 12, y: 4, w: 1 },
+        { kind: 'room', x: 4, y: 9, w: 2 },
+        { kind: 'desk', x: 2, y: 12, w: 2, face: 1 },
+        { kind: 'desk', x: 6, y: 12, w: 2, face: 1 },
+        { kind: 'desk', x: 7, y: 11, w: 1, face: 1 },
+        { kind: 'desk', x: 8, y: 6, w: 2, face: -1 },
+        { kind: 'desk', x: 10, y: 6, w: 2, face: -1 },
+        { kind: 'booth', x: 12, y: 4, w: 1 },
+        { kind: 'board', x: 10, y: 3, w: 2 },
+        { kind: 'plant', x: 12, y: 3, w: 1 },
+        { kind: 'plant', x: 7, y: 9, w: 1 },
+        { kind: 'plant', x: 8, y: 3, w: 1 },
       ];
     }
     if (role === 'it') {
       return [
-        { kind: 'rack', x: 9, y: 7, w: 1 },
+        { kind: 'rack', x: 9, y: 6, w: 1 },
+        { kind: 'rack', x: 10, y: 6, w: 1 },
         { kind: 'rack', x: 11, y: 6, w: 1 },
-        { kind: 'rack', x: 12, y: 5, w: 1 },
+        { kind: 'rack', x: 12, y: 6, w: 1 },
+        { kind: 'rack', x: 9, y: 5, w: 1 },
         { kind: 'rack', x: 10, y: 5, w: 1 },
-        { kind: 'desk', x: 4, y: 11, w: 2, face: 1 },
-        { kind: 'desk', x: 6, y: 12, w: 2, face: 1 },
+        { kind: 'rack', x: 11, y: 5, w: 1 },
+        { kind: 'rack', x: 12, y: 4, w: 1 },
+        { kind: 'table', x: 2, y: 11, w: 3 },
+        { kind: 'desk', x: 2, y: 12, w: 2, face: 1 },
+        { kind: 'desk', x: 5, y: 12, w: 2, face: 1 },
+        { kind: 'plant', x: 7, y: 12, w: 1 },
+        { kind: 'plant', x: 8, y: 7, w: 1 },
       ];
     }
     if (role === 'vacant') {
       return [
+        { kind: 'box', x: 3, y: 12, w: 1 },
         { kind: 'box', x: 4, y: 12, w: 1 },
-        { kind: 'box', x: 6, y: 11, w: 1 },
+        { kind: 'box', x: 5, y: 11, w: 1 },
+        { kind: 'box', x: 6, y: 12, w: 1 },
         { kind: 'box', x: 10, y: 6, w: 2 },
-        { kind: 'marker', x: 3, y: 12, w: 1 },
+        { kind: 'box', x: 12, y: 5, w: 1 },
+        { kind: 'marker', x: 2, y: 11, w: 1 },
+        { kind: 'marker', x: 7, y: 12, w: 1 },
         { kind: 'marker', x: 7, y: 10, w: 1 },
         { kind: 'marker', x: 9, y: 7, w: 1 },
-        { kind: 'marker', x: 12, y: 5, w: 1 },
+        { kind: 'marker', x: 11, y: 7, w: 1 },
+        { kind: 'chairs', x: 8, y: 6, w: 1 },
       ];
     }
-    if (level <= 5) {
-      return [
-        { kind: 'desk', x: 4, y: 12, w: 2, face: 1 },
-        { kind: 'desk', x: 6, y: 11, w: 2, face: 1 },
-        { kind: 'desk', x: 10, y: 6, w: 2, face: -1 },
-        { kind: 'board', x: 11, y: 4, w: 2 },
-        { kind: 'plant', x: 7, y: 9, w: 1 },
-      ];
-    }
-    return [
-      { kind: 'desk', x: 4, y: 11, w: 2, face: 1 },
-      { kind: 'desk', x: 6, y: 10, w: 2, face: -1 },
-      { kind: 'desk', x: 3, y: 12, w: 2, face: 1 },
-      { kind: 'desk', x: 9, y: 6, w: 2, face: -1 },
-      { kind: 'desk', x: 11, y: 5, w: 2, face: 1 },
-      { kind: 'plant', x: 7, y: 12, w: 1 },
-    ];
+    return rnd;
   }
 
   function notchLayout(base: FloorLayout, role: FloorType, level: number): FloorLayout {
-    const furniture = stackAccents(role, level).filter(
-      (item) => towerSolid(item.x, item.y) && item.x >= 1 && item.y >= 1 && item.x + item.w <= 13,
-    );
+    void base;
+    const furniture = stackAccents(role, level).filter(fitsNotch);
     const block = new Set<string>();
     for (const item of furniture) {
-      const depth = item.kind === 'room' ? 2 : 1;
-      if (item.kind === 'cable' || item.kind === 'marker') continue;
-      for (let j = 0; j < depth; j++) {
-        for (let i = 0; i < item.w; i++) block.add(`${item.x + i},${item.y + j}`);
+      if (item.kind === 'cable') continue;
+      for (const tile of blockedTiles(item)) {
+        if (towerSolid(tile.x, tile.y)) block.add(`${tile.x},${tile.y}`);
       }
     }
-    const chat = role === 'lounge' ? [{ x: 5, y: 12 }, { x: 3, y: 12 }, { x: 9, y: 6 }] : base.chat.filter((c) => notchOpen(c.x, c.y));
+    const chat = (role === 'lounge' ? [{ x: 3, y: 11 }, { x: 6, y: 11 }, { x: 8, y: 7 }] : []).filter(
+      (c) => notchOpen(c.x, c.y) && !block.has(`${c.x},${c.y}`),
+    );
     return {
       role,
       solid: (x, y) => towerSolid(x, y),
@@ -1043,10 +1169,14 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
           const sideA = building ? 1 : 0.9;
           const sideC = building ? 0x071018 : 0x0c243c;
           const cut = (nx: number, ny: number) => (building ? !towerSolid(nx, ny) : !layout.solid(nx, ny));
-          if (cut(x, y - 1)) poly(g, face(x, y, x + 1, y), sideC, sideA, ICE, building ? 0.85 : 0.35);
-          if (cut(x + 1, y)) poly(g, face(x + 1, y, x + 1, y + 1), sideC, sideA, ICE, building ? 0.7 : 0.3);
-          if (cut(x, y + 1)) poly(g, face(x, y + 1, x + 1, y + 1), building ? 0x0a1828 : 0x0e2844, sideA, ICE, building ? 0.9 : 0.4);
-          if (cut(x - 1, y)) poly(g, face(x, y, x, y + 1), sideC, sideA, ICE, building ? 0.7 : 0.3);
+          const edge = (x0: number, y0: number, x1: number, y1: number, fill: number, strokeA: number) => {
+            if (building) poly(g, face(x0, y0, x1, y1), fill, 1);
+            else poly(g, face(x0, y0, x1, y1), fill, sideA, ICE, strokeA);
+          };
+          if (cut(x, y - 1)) edge(x, y, x + 1, y, sideC, 0.35);
+          if (cut(x + 1, y)) edge(x + 1, y, x + 1, y + 1, sideC, 0.3);
+          if (cut(x, y + 1)) edge(x, y + 1, x + 1, y + 1, building ? 0x0a1828 : 0x0e2844, 0.4);
+          if (cut(x - 1, y)) edge(x, y, x, y + 1, sideC, 0.3);
         });
         pushDraw(gx, gy, 2, (g) => {
           const mark = (x + y) % 2 === 0;
@@ -1056,33 +1186,16 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
             poly(g, tilePts(x, y, floorZ), 0x0a1c33, 0.42, mark ? DIM : undefined, 0.28);
           }
         });
-        if (y === 0) {
-          pushDraw(gx, gy, building ? 20 : 3, (g) => {
+        if (y === 0 && !building) {
+          pushDraw(gx, gy, 3, (g) => {
             const a = iso(x, y, floorZ);
             const b = iso(x + 1, y, floorZ);
             const c = iso(x + 1, y, wallZ);
             const d = iso(x, y, wallZ);
-            poly(g, [a, b, c, d], 0x081018, building ? 1 : 0.92, ICE, building ? 0.75 : 0.45);
-            if (building) {
-              const base = iso(x + 0.5, y, floorZ);
-              const cap = iso(x + 0.5, y, wallZ);
-              g.rect(Math.round(base.x), Math.round(cap.y), u(1), Math.max(2, Math.round(base.y - cap.y))).fill({ color: ICE, alpha: 0.55 });
-            }
+            poly(g, [a, b, c, d], 0x081018, 0.92, ICE, 0.45);
           });
         }
-        if (building && x === PLAN - 1) {
-          pushDraw(gx, gy, 20, (g) => {
-            const a = iso(x + 1, y, floorZ);
-            const b = iso(x + 1, y + 1, floorZ);
-            const c = iso(x + 1, y + 1, wallZ);
-            const d = iso(x + 1, y, wallZ);
-            poly(g, [a, b, c, d], 0x081018, 1, ICE, 0.7);
-            const base = iso(x + 1, y + 0.5, floorZ);
-            const cap = iso(x + 1, y + 0.5, wallZ);
-            g.rect(Math.round(base.x), Math.round(cap.y), u(1), Math.max(2, Math.round(base.y - cap.y))).fill({ color: ICE, alpha: 0.5 });
-          });
-        }
-        if (x === 0) {
+        if (x === 0 && !building) {
           pushDraw(gx, gy, building ? 20 : 4, (g) => {
             const a = iso(x, y, floorZ);
             const b = iso(x, y + 1, floorZ);
@@ -1094,18 +1207,6 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
               const cap = iso(x, y + 0.5, wallZ);
               g.rect(Math.round(base.x), Math.round(cap.y), u(1), Math.max(2, Math.round(base.y - cap.y))).fill({ color: ICE, alpha: 0.5 });
             }
-          });
-        }
-        if (building && y === PLAN - 1) {
-          pushDraw(gx, gy, 20, (g) => {
-            const a = iso(x, y + 1, floorZ);
-            const b = iso(x + 1, y + 1, floorZ);
-            const c = iso(x + 1, y + 1, wallZ);
-            const d = iso(x, y + 1, wallZ);
-            poly(g, [a, b, c, d], 0x081018, 1, ICE, 0.75);
-            const base = iso(x + 0.5, y + 1, floorZ);
-            const cap = iso(x + 0.5, y + 1, wallZ);
-            g.rect(Math.round(base.x), Math.round(cap.y), u(1), Math.max(2, Math.round(base.y - cap.y))).fill({ color: ICE, alpha: 0.5 });
           });
         }
         if (
@@ -1126,24 +1227,30 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
         }
       }
     }
-    const pieces = building ? stackAccents(sim.cfg.type, sim.cfg.level) : layout.furniture;
+    const pieces = building ? stackAccents(sim.cfg.type, sim.cfg.level).filter(fitsNotch) : layout.furniture;
+    const furnish = (draw: (g: Graphics) => void) => (g: Graphics) => {
+      const saved = SPR;
+      if (building) SPR = 0.88;
+      draw(g);
+      SPR = saved;
+    };
     for (const item of pieces) {
-      if (building && (!towerSolid(item.x, item.y) || item.x < 1 || item.y < 1 || item.x + item.w > 13)) continue;
+      if (building && !fitsNotch(item)) continue;
       const frontX = item.x + item.w - 1;
       if (item.kind === 'desk') {
         const face = item.face ?? 1;
         if (face === 1) {
-          pushDraw(frontX, item.y, 5, (g) => drawDesk(g, item));
-          pushDraw(frontX, item.y, 7, (g) => drawMonitors(g, item, now));
-          pushDraw(frontX, item.y, 8, (g) => drawChair(g, item));
+          pushDraw(frontX, item.y, 5, furnish((g) => drawDesk(g, item)));
+          pushDraw(frontX, item.y, 7, furnish((g) => drawMonitors(g, item, now)));
+          pushDraw(frontX, item.y, 8, furnish((g) => drawChair(g, item)));
         } else {
-          pushDraw(frontX, item.y, 3, (g) => drawChair(g, item));
-          pushDraw(frontX, item.y, 6, (g) => drawDesk(g, item));
-          pushDraw(frontX, item.y, 9, (g) => drawMonitors(g, item, now));
+          pushDraw(frontX, item.y, 3, furnish((g) => drawChair(g, item)));
+          pushDraw(frontX, item.y, 6, furnish((g) => drawDesk(g, item)));
+          pushDraw(frontX, item.y, 9, furnish((g) => drawMonitors(g, item, now)));
         }
         continue;
       }
-      pushDraw(frontX, item.y, 6, (g) => drawFurn(g, item, now));
+      pushDraw(frontX, item.y, item.kind === 'room' || item.kind === 'booth' ? 11 : 6, furnish((g) => drawFurn(g, item, now)));
     }
     for (const person of people) {
       if (building && !towerSolid(Math.round(person.x), Math.round(person.y))) continue;
@@ -1281,8 +1388,8 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       const path = route(layout, { x: person.x, y: person.y }, goal);
       person.path = path.slice(1);
       person.hop = 0;
-      person.pose = person.path.length > 0 ? 'walk' : 'chat';
-      if (person.pose === 'chat') person.timer = 2.4;
+      person.pose = 'walk';
+      if (person.path.length === 0) person.timer = 0.6;
       return;
     }
     if (atHome) {
@@ -1320,11 +1427,12 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
   function pickGoal(person: Person, all: readonly Person[]): Pt {
     person.seed = (Math.imul(person.seed, 1664525) + 1013904223) >>> 0;
     const chatting = all.filter((p) => p.pose === 'chat' || (p.pose === 'walk' && layout.chat.some((c) => c.x === p.path[p.path.length - 1]?.x && c.y === p.path[p.path.length - 1]?.y)));
-    if (person.seed % 3 !== 0 && layout.chat[0] && chatting.length < 2) {
-      const spot = layout.chat[person.seed % layout.chat.length] ?? layout.chat[0];
+    const chats = layout.chat.filter((c) => layout.walkable(c.x, c.y));
+    if (person.seed % 3 !== 0 && chats[0] && chatting.length < 2) {
+      const spot = chats[person.seed % chats.length] ?? chats[0];
       return { x: spot.x, y: spot.y };
     }
-    const open = aisleTiles(layout).filter((t) => t.x !== person.homeX || t.y !== person.homeY);
+    const open = aisleTiles(layout).filter((t) => layout.walkable(t.x, t.y) && (t.x !== person.homeX || t.y !== person.homeY));
     const pick = open[person.seed % Math.max(1, open.length)];
     return pick ?? { x: person.homeX, y: person.homeY };
   }
@@ -1378,8 +1486,11 @@ function aisleTiles(layout: FloorLayout): Pt[] {
 }
 
 function route(layout: FloorLayout, start: Pt, goal: Pt): Pt[] {
-  const walk = (x: number, y: number) =>
-    (x === start.x && y === start.y) || (x === goal.x && y === goal.y) || layout.walkable(x, y);
+  const walk = (x: number, y: number) => {
+    if (x === start.x && y === start.y) return true;
+    if (layout.blocked(x, y)) return x === goal.x && y === goal.y;
+    return layout.walkable(x, y);
+  };
   if (start.x === goal.x && start.y === goal.y) return [start];
   const h = (x: number, y: number) => Math.abs(x - goal.x) + Math.abs(y - goal.y);
   const open: { x: number; y: number; g: number; f: number }[] = [{ x: start.x, y: start.y, g: 0, f: h(start.x, start.y) }];
