@@ -1,10 +1,8 @@
-import { Application, Sprite, Texture } from 'pixi.js';
 import './style.css';
 import {
   BURN_IN_FAST_MS,
   BURN_IN_INTERVAL_MS,
   BURN_IN_PATH,
-  BG,
   EVENT_MAX_MS,
   EVENT_MIN_MS,
   EVENT_TTL_MS,
@@ -13,32 +11,28 @@ import {
 import { floors } from './config/floors.ts';
 import { createMockEventSource } from './events/source.ts';
 import type { OfficeEventType } from './events/source.ts';
-import { createScene, setForcedHour } from './render/scene.ts';
+import { createOffice } from './render/office3d.ts';
 
 const params = new URLSearchParams(location.search);
 if (params.get('kiosk') === '1') document.body.classList.add('kiosk');
 
 const hourParam = params.get('hour');
-if (hourParam !== null && hourParam !== '') {
-  const hour = Number(hourParam);
-  if (hour >= 0 && hour <= 23) setForcedHour(hour);
-}
+const forcedHour = hourParam !== null && hourParam !== '' ? Number(hourParam) : -1;
 
 const appRoot = document.querySelector<HTMLElement>('#app');
 if (!appRoot) throw new Error('missing #app');
 
-const pixelCanvas = document.createElement('canvas');
-pixelCanvas.width = VIEW;
-pixelCanvas.height = VIEW;
-const pixelCtx = pixelCanvas.getContext('2d', { alpha: false });
-if (!pixelCtx) throw new Error('2d context unavailable');
-pixelCtx.imageSmoothingEnabled = false;
-const ctx: CanvasRenderingContext2D = pixelCtx;
+const office = createOffice(floors);
 
-const scene = createScene(floors);
-const bootNow = performance.now();
-scene.update(16, bootNow);
-scene.draw(ctx, bootNow);
+function suzhouHour(now = Date.now()): number {
+  if (forcedHour >= 0 && forcedHour <= 23) return forcedHour;
+  let h = (Math.floor(now / 3_600_000) + 8) % 24;
+  if (h < 0) h += 24;
+  return h;
+}
+
+office.setHour(suzhouHour());
+window.setInterval(() => office.setHour(suzhouHour()), 60_000);
 
 const demo = params.get('demo') === '1';
 const source = createMockEventSource({
@@ -46,7 +40,7 @@ const source = createMockEventSource({
   maxMs: demo ? 14_000 : EVENT_MAX_MS,
   ttlMs: EVENT_TTL_MS,
   firstMs: demo ? 9_000 : undefined,
-  levelsFor: (type) => scene.levelsFor(type),
+  levelsFor: (type) => office.levelsFor(type),
 });
 
 if (demo) {
@@ -55,94 +49,58 @@ if (demo) {
     const type = seq[i];
     if (!type) continue;
     window.setTimeout(() => {
-      const levels = scene.levelsFor(type);
+      const levels = office.levelsFor(type);
       const level = levels[i % Math.max(1, levels.length)] ?? levels[0];
       if (!level) return;
-      scene.push({ type, level, ttlMs: EVENT_TTL_MS, at: performance.now() });
+      office.push({ type, level, ttlMs: EVENT_TTL_MS, at: performance.now() });
     }, 1200 + i * 2200);
   }
 }
+source.start((event) => office.push(event));
 
-source.start((event) => scene.push(event));
-
-function fit(el: HTMLCanvasElement): void {
+function fit(): void {
   const side = Math.min(window.innerWidth, window.innerHeight);
   const scale = Math.max(1, Math.floor(side / VIEW));
-  const px = `${VIEW * scale}px`;
-  el.style.width = px;
-  el.style.height = px;
+  const px = VIEW * scale;
+  office.resize(px);
+  office.canvas.style.width = `${px}px`;
+  office.canvas.style.height = `${px}px`;
 }
 
-function startBurnIn(el: HTMLCanvasElement): void {
-  let step = 0;
-  const interval = params.get('burn') === 'fast' ? BURN_IN_FAST_MS : BURN_IN_INTERVAL_MS;
-  window.setInterval(() => {
-    step = (step + 1) % BURN_IN_PATH.length;
-    const offset = BURN_IN_PATH[step] ?? [0, 0];
-    el.style.transform = `translate(${offset[0]}px, ${offset[1]}px)`;
-  }, interval);
-}
+let drift = 0;
+const driftEvery = params.get('burn') === 'fast' ? BURN_IN_FAST_MS : BURN_IN_INTERVAL_MS;
+window.setInterval(() => {
+  drift = (drift + 1) % BURN_IN_PATH.length;
+  const offset = BURN_IN_PATH[drift] ?? [0, 0];
+  office.canvas.style.transform = `translate(${offset[0]}px, ${offset[1]}px)`;
+}, driftEvery);
 
-function watchContextLoss(canvas: HTMLCanvasElement): void {
-  canvas.addEventListener('webglcontextlost', (event) => {
-    event.preventDefault();
-    window.location.reload();
-  });
-}
+office.canvas.addEventListener('webglcontextlost', (event) => {
+  event.preventDefault();
+  window.location.reload();
+});
 
-const mount = async (): Promise<void> => {
-  try {
-    const app = new Application();
-    await app.init({
-      width: VIEW,
-      height: VIEW,
-      background: BG,
-      antialias: false,
-      resolution: 1,
-      autoDensity: false,
-      roundPixels: true,
-      preference: 'webgl',
-      powerPreference: 'high-performance',
-    });
-    const texture = Texture.from(pixelCanvas);
-    texture.source.scaleMode = 'nearest';
-    texture.source.autoGenerateMipmaps = false;
-    const sprite = new Sprite(texture);
-    app.stage.addChild(sprite);
-    app.ticker.add((ticker) => {
-      const dt = ticker.deltaMS > 100 ? 100 : ticker.deltaMS;
-      scene.update(dt, ticker.lastTime);
-      scene.draw(ctx, ticker.lastTime);
-      texture.source.update();
-    });
-    appRoot.appendChild(app.canvas);
-    fit(app.canvas);
-    startBurnIn(app.canvas);
-    watchContextLoss(app.canvas);
-    window.addEventListener('resize', () => fit(app.canvas));
-  } catch (error) {
-    console.error(error);
-    appRoot.appendChild(pixelCanvas);
-    fit(pixelCanvas);
-    startBurnIn(pixelCanvas);
-    let last = performance.now();
-    const loop = (now: number) => {
-      const dt = Math.min(100, now - last);
-      last = now;
-      scene.update(dt, now);
-      scene.draw(ctx, now);
-      requestAnimationFrame(loop);
-    };
-    requestAnimationFrame(loop);
-    window.addEventListener('resize', () => fit(pixelCanvas));
-  }
-};
+appRoot.appendChild(office.canvas);
+fit();
+window.addEventListener('resize', fit);
 
 if (params.get('kiosk') === '1') {
   window.addEventListener('contextmenu', (event) => event.preventDefault());
 }
 
-mount().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : 'failed to start';
-  appRoot.innerHTML = `<p id="boot-error">像素公司无法启动：${message}</p>`;
-});
+let last = performance.now();
+let acc = 0;
+const frame = (now: number) => {
+  let dt = now - last;
+  last = now;
+  if (dt > 50) dt = 50;
+  acc += dt;
+  if (acc >= 1000 / 30) {
+    const step = acc;
+    acc = 0;
+    office.update(step / 1000, now);
+  }
+  requestAnimationFrame(frame);
+};
+office.update(1 / 30, performance.now());
+requestAnimationFrame(frame);
