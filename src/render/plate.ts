@@ -124,15 +124,54 @@ function paintText(
   }
 }
 
-function inside(floor: FloorConfig, p: Vec2, margin = 8): boolean {
-  if (!pointInPolygon(p, floor.polygon)) return false;
-  const probes = [
-    { x: p.x - margin, y: p.y },
-    { x: p.x + margin, y: p.y },
-    { x: p.x, y: p.y - margin },
-    { x: p.x, y: p.y + margin },
-  ];
-  return probes.every((q) => pointInPolygon(q, floor.polygon));
+function bounds(floor: FloorConfig): { minX: number; maxX: number; minY: number; maxY: number } {
+  let minX = 9999;
+  let maxX = 0;
+  let minY = 9999;
+  let maxY = 0;
+  for (const p of floor.polygon) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+function spot(floor: FloorConfig, fx: number, fy: number): Vec2 | null {
+  const box = bounds(floor);
+  const x = box.minX + fx * (box.maxX - box.minX);
+  const y = box.minY + fy * (box.maxY - box.minY);
+  if (pointInPolygon({ x, y }, floor.polygon)) return { x, y };
+  for (let r = 10; r <= 50; r += 10) {
+    for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, r]] as const) {
+      const q = { x: x + dx, y: y + dy };
+      if (pointInPolygon(q, floor.polygon)) return q;
+    }
+  }
+  return null;
+}
+
+function scatter(
+  cfg: FloorConfig,
+  kind: PropKind,
+  count: number,
+  gap: number,
+  add: (floor: number, x: number, y: number, kind: PropKind, dual?: boolean) => void,
+  dual = false,
+): void {
+  const box = bounds(cfg);
+  const placed: Vec2[] = [];
+  for (let y = box.minY + 16; y <= box.maxY - 12 && placed.length < count; y += gap * 0.72) {
+    const shift = ((y / gap) | 0) % 2 === 0 ? 0 : gap * 0.45;
+    for (let x = box.minX + 18 + shift; x <= box.maxX - 16 && placed.length < count; x += gap) {
+      const p = { x, y };
+      if (!pointInPolygon(p, cfg.polygon)) continue;
+      if (placed.some((q) => Math.hypot(q.x - x, q.y - y) < gap * 0.8)) continue;
+      placed.push(p);
+      add(cfg.level, x, y, kind, dual);
+    }
+  }
 }
 
 function buildProps(floors: readonly FloorConfig[]): Prop[] {
@@ -143,77 +182,47 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
   };
   for (const cfg of floors) {
     if (cfg.type === 'sales' || cfg.type === 'it' || cfg.type === 'rnd') {
-      const limit = Math.min(cfg.stations, cfg.type === 'it' ? 8 : 11);
-      for (let row = 0; row < 3; row++) {
-        const cols = cfg.type === 'it' ? 4 : 6;
-        for (let col = 0; col < cols; col++) {
-          const have = props.filter((p) => p.floor === cfg.level && p.kind === 'desk').length;
-          if (have >= limit) break;
-          if ((row + col) % 2 === 1) continue;
-          const p = isoPoint(cfg, 0.35 + col * 1.7, 0.4 + row * 0.95);
-          if (!inside(cfg, p, 16)) continue;
-          add(cfg.level, p.x, p.y, 'desk', cfg.type === 'rnd');
-        }
-      }
+      scatter(cfg, 'desk', Math.min(cfg.stations, 14), 46, add, cfg.type === 'rnd');
     }
-    const at = (u: number, v: number) => isoPoint(cfg, u, v);
+    const put = (fx: number, fy: number, kind: PropKind) => {
+      const p = spot(cfg, fx, fy);
+      if (p) add(cfg.level, p.x, p.y, kind);
+    };
     if (cfg.type === 'sales') {
-      const g = at(6.2, 0.8);
-      if (inside(cfg, g, 6)) add(cfg.level, g.x, g.y, 'gong');
-      const k = at(1.2, 0.2);
-      if (inside(cfg, k, 4)) add(cfg.level, k.x, k.y, 'kpi');
+      put(0.78, 0.62, 'gong');
+      put(0.42, 0.22, 'board');
     }
     if (cfg.type === 'it') {
-      for (let i = 0; i < 2; i++) {
-        const r = at(8.8 + i * 1.1, 0.7);
-        if (inside(cfg, r, 6)) add(cfg.level, r.x, r.y, 'rack');
-      }
+      put(0.84, 0.35, 'rack');
+      put(0.92, 0.58, 'rack');
     }
-    if (cfg.type === 'rnd') {
-      const b = at(0.4, 0.3);
-      if (inside(cfg, b, 4)) add(cfg.level, b.x, b.y, 'board');
-      if (cfg.level === 7) {
-        const lab = at(9.2, 1.2);
-        if (inside(cfg, lab, 6)) add(cfg.level, lab.x, lab.y, 'lab');
-      }
-    }
+    if (cfg.type === 'rnd' && cfg.level === 7) put(0.8, 0.55, 'lab');
     if (cfg.type === 'lounge') {
-      const pong = at(1.2, 1.6);
-      if (inside(cfg, pong, 8)) add(cfg.level, pong.x, pong.y, 'pong');
-      const bar = at(4.4, 0.6);
-      if (inside(cfg, bar, 6)) add(cfg.level, bar.x, bar.y, 'bar');
-      for (const [u, v] of [[3.8, 1.15], [4.6, 1.15], [5.2, 1.15]] as const) {
-        const s = at(u, v);
-        if (inside(cfg, s, 4)) add(cfg.level, s.x, s.y, 'stool');
-      }
-      const sofa = at(0.5, 0.45);
-      if (inside(cfg, sofa, 6)) add(cfg.level, sofa.x, sofa.y, 'sofa');
+      put(0.22, 0.32, 'sofa');
+      put(0.48, 0.28, 'sofa');
+      put(0.78, 0.5, 'bar');
+      put(0.7, 0.68, 'stool');
+      put(0.82, 0.7, 'stool');
+      put(0.9, 0.62, 'stool');
+      put(0.38, 0.7, 'pong');
+      put(0.3, 0.55, 'plant');
+      put(0.58, 0.48, 'plant');
+      put(0.12, 0.62, 'plant');
     }
     if (cfg.type === 'lobby') {
-      const desk = at(1.4, 1.1);
-      if (inside(cfg, desk, 6)) add(cfg.level, desk.x, desk.y, 'reception');
-      const gate = at(0.7, 2.1);
-      if (inside(cfg, gate, 4)) add(cfg.level, gate.x, gate.y, 'gate');
-      for (const [u, v] of [[0.3, 0.4], [3.6, 0.5], [2.2, 2.2]] as const) {
-        const plant = at(u, v);
-        if (inside(cfg, plant, 4)) add(cfg.level, plant.x, plant.y, 'plant');
-      }
+      put(0.5, 0.42, 'reception');
+      put(0.28, 0.28, 'kpi');
+      put(0.72, 0.26, 'kpi');
+      put(0.36, 0.72, 'gate');
+      put(0.18, 0.55, 'plant');
+      put(0.62, 0.6, 'plant');
+      put(0.84, 0.4, 'plant');
     }
     if (cfg.type === 'vacant') {
-      for (const [u, v] of [[1.1, 0.8], [2.6, 1.3], [4.2, 0.6]] as const) {
-        const c = at(u, v);
-        if (inside(cfg, c, 8)) add(cfg.level, c.x, c.y, 'ghost');
-      }
-      for (const [u, v] of [[1.6, 1.8], [3.4, 0.5], [5.1, 1.4]] as const) {
-        const c = at(u, v);
-        if (inside(cfg, c, 6)) add(cfg.level, c.x, c.y, 'cone');
-      }
-    }
-    if (cfg.type === 'lounge') {
-      for (const [u, v] of [[0.4, 1.5], [5.6, 0.4], [2.8, 0.35]] as const) {
-        const plant = at(u, v);
-        if (inside(cfg, plant, 4)) add(cfg.level, plant.x, plant.y, 'plant');
-      }
+      scatter(cfg, 'ghost', 10, 58, add);
+      put(0.25, 0.7, 'cone');
+      put(0.55, 0.4, 'cone');
+      put(0.8, 0.65, 'cone');
     }
   }
   return props;
@@ -221,15 +230,15 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
 
 function randomInside(floor: FloorConfig, seed: number): Vec2 {
   let s = seed >>> 0;
-  for (let n = 0; n < 24; n++) {
+  const box = bounds(floor);
+  for (let n = 0; n < 40; n++) {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    const u = ((s >>> 8) % 800) / 100;
+    const x = box.minX + 14 + ((s % 1000) / 1000) * (box.maxX - box.minX - 28);
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    const v = ((s >>> 8) % 400) / 100;
-    const p = isoPoint(floor, u * 0.1, v * 0.1);
-    if (inside(floor, p, 14)) return p;
+    const y = box.minY + 12 + ((s % 1000) / 1000) * (box.maxY - box.minY - 24);
+    if (pointInPolygon({ x, y }, floor.polygon)) return { x, y };
   }
-  return floor.origin;
+  return { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
 }
 
 function buildActors(floors: readonly FloorConfig[], props: readonly Prop[]): Actor[] {
@@ -785,7 +794,8 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
         const floor = byLevel(ev.level);
         const who = actors.find((a) => a.floor === ev.level && a.role === 2);
         if (floor && who) {
-          const door = isoPoint(floor, 0.4, 2.4);
+          const box = bounds(floor);
+          const door = { x: box.minX + (box.maxX - box.minX) * 0.32, y: box.maxY - 16 };
           const dest = randomInside(floor, who.seed + 4);
           if (pointInPolygon(door, floor.polygon)) {
             who.x = door.x;

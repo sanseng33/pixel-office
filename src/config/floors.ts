@@ -46,16 +46,15 @@ function plateOf(front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU
   const yf = front;
   const ym = front - 42;
   const yb = front - 86;
-  const near = front + 68;
-  const recess = front + 6;
+  const near = front + 70;
+  const recess = front + 4;
   const lip: readonly Vec2[] = [
-    { x: 172, y: near - 8 },
-    { x: 250, y: near },
-    { x: 340, y: near - 4 },
-    { x: 340, y: recess + 10 },
-    { x: 560, y: recess },
-    { x: 760, y: recess + 8 },
-    { x: 848, y: recess - 10 },
+    { x: 172, y: near - 12 },
+    { x: 310, y: near },
+    { x: 336, y: recess + 14 },
+    { x: 520, y: recess - 6 },
+    { x: 700, y: recess + 6 },
+    { x: 848, y: recess - 14 },
   ];
   return {
     polygon: [
@@ -69,7 +68,7 @@ function plateOf(front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU
     origin: { x: 252, y: yb + 8 },
     axisU: { x: 42, y: 5 },
     axisV: { x: 6, y: 22 },
-    labelAt: { x: 108, y: yf - 104 },
+    labelAt: { x: 108, y: yf - 28 },
     edges: [lip],
   };
 }
@@ -108,9 +107,9 @@ export const floors: readonly FloorConfig[] = [
     label: '3F',
     name: 'SALES',
     title: '销售',
-    stations: 12,
-    occupancy: 0.45,
-    people: 1,
+    stations: 14,
+    occupancy: 0.4,
+    people: 2,
   }),
   floor({
     level: 4,
@@ -118,9 +117,9 @@ export const floors: readonly FloorConfig[] = [
     label: '4F',
     name: 'IT',
     title: 'IT 机房',
-    stations: 8,
-    occupancy: 0.45,
-    people: 1,
+    stations: 12,
+    occupancy: 0.4,
+    people: 2,
   }),
   floor({
     level: 5,
@@ -128,9 +127,9 @@ export const floors: readonly FloorConfig[] = [
     label: '5F',
     name: 'R&D',
     title: '研发',
-    stations: 12,
-    occupancy: 0.45,
-    people: 1,
+    stations: 14,
+    occupancy: 0.4,
+    people: 2,
   }),
   floor({
     level: 6,
@@ -148,9 +147,9 @@ export const floors: readonly FloorConfig[] = [
     label: '7F',
     name: 'R&D',
     title: '研发（实验台）',
-    stations: 10,
+    stations: 12,
     occupancy: 0.4,
-    people: 1,
+    people: 2,
   }),
 ];
 
