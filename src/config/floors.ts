@@ -46,11 +46,16 @@ function plateOf(front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU
   const yf = front;
   const ym = front - 42;
   const yb = front - 86;
+  const near = front + 68;
+  const recess = front + 6;
   const lip: readonly Vec2[] = [
-    { x: 196, y: yf + 2 },
-    { x: 540, y: yf - 8 },
-    { x: 540, y: ym },
-    { x: 848, y: ym - 6 },
+    { x: 172, y: near - 8 },
+    { x: 250, y: near },
+    { x: 340, y: near - 4 },
+    { x: 340, y: recess + 10 },
+    { x: 560, y: recess },
+    { x: 760, y: recess + 8 },
+    { x: 848, y: recess - 10 },
   ];
   return {
     polygon: [
@@ -64,7 +69,7 @@ function plateOf(front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU
     origin: { x: 252, y: yb + 8 },
     axisU: { x: 42, y: 5 },
     axisV: { x: 6, y: 22 },
-    labelAt: { x: 108, y: yf - 52 },
+    labelAt: { x: 108, y: yf - 104 },
     edges: [lip],
   };
 }
@@ -150,32 +155,34 @@ export const floors: readonly FloorConfig[] = [
 ];
 
 /** 屋顶空白字牌的内框，底图像素。 */
-export const SIGN_BOARD = { x: 292, y: 58, w: 214, h: 78 };
+/** Inner dark area of the roof board, with room for padding. */
+export const SIGN_BOARD = { x: 338, y: 66, w: 156, h: 52 };
 
 /** 角柱：电流从下往上送。 */
 export const COLUMN_LINES: readonly (readonly Vec2[])[] = [
   [
-    { x: 186, y: 960 },
-    { x: 186, y: 230 },
+    { x: 170, y: 970 },
+    { x: 170, y: 210 },
   ],
   [
-    { x: 540, y: 960 },
-    { x: 540, y: 250 },
+    { x: 340, y: 960 },
+    { x: 340, y: 260 },
   ],
   [
-    { x: 848, y: 940 },
-    { x: 848, y: 200 },
+    { x: 848, y: 930 },
+    { x: 848, y: 188 },
   ],
 ];
 
 /** 屋顶女儿墙外缘，顺着屋面亮边走。 */
 export const ROOF_EDGE: readonly Vec2[] = [
-  { x: 196, y: 228 },
-  { x: 540, y: 196 },
-  { x: 848, y: 188 },
-  { x: 820, y: 236 },
-  { x: 500, y: 258 },
-  { x: 210, y: 246 },
+  { x: 176, y: 236 },
+  { x: 360, y: 198 },
+  { x: 560, y: 184 },
+  { x: 852, y: 196 },
+  { x: 824, y: 242 },
+  { x: 500, y: 256 },
+  { x: 190, y: 248 },
 ];
 
 export const PLATE_SRC = '/assets/bg-shell.jpg';

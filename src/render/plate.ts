@@ -19,6 +19,7 @@ const SCREEN = '#e7f7ff';
 type Pose = 'sit' | 'walk' | 'phone' | 'chat' | 'swing' | 'cheer';
 type PropKind =
   | 'desk'
+  | 'ghost'
   | 'gong'
   | 'kpi'
   | 'rack'
@@ -39,6 +40,7 @@ interface Prop {
   y: number;
   kind: PropKind;
   phase: number;
+  dual: boolean;
 }
 
 interface Actor {
@@ -136,8 +138,8 @@ function inside(floor: FloorConfig, p: Vec2, margin = 8): boolean {
 function buildProps(floors: readonly FloorConfig[]): Prop[] {
   const props: Prop[] = [];
   let phase = 0;
-  const add = (floor: number, x: number, y: number, kind: PropKind) => {
-    props.push({ floor, x, y, kind, phase: phase++ });
+  const add = (floor: number, x: number, y: number, kind: PropKind, dual = false) => {
+    props.push({ floor, x, y, kind, phase: phase++, dual });
   };
   for (const cfg of floors) {
     if (cfg.type === 'sales' || cfg.type === 'it' || cfg.type === 'rnd') {
@@ -149,8 +151,8 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
           if (have >= limit) break;
           if ((row + col) % 2 === 1) continue;
           const p = isoPoint(cfg, 0.35 + col * 1.7, 0.4 + row * 0.95);
-          if (!inside(cfg, p, 14)) continue;
-          add(cfg.level, p.x, p.y, 'desk');
+          if (!inside(cfg, p, 16)) continue;
+          add(cfg.level, p.x, p.y, 'desk', cfg.type === 'rnd');
         }
       }
     }
@@ -162,8 +164,8 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
       if (inside(cfg, k, 4)) add(cfg.level, k.x, k.y, 'kpi');
     }
     if (cfg.type === 'it') {
-      for (let i = 0; i < 3; i++) {
-        const r = at(8.6 + i * 0.85, 0.7);
+      for (let i = 0; i < 2; i++) {
+        const r = at(8.8 + i * 1.1, 0.7);
         if (inside(cfg, r, 6)) add(cfg.level, r.x, r.y, 'rack');
       }
     }
@@ -198,9 +200,19 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
       }
     }
     if (cfg.type === 'vacant') {
-      for (const [u, v] of [[1.2, 1.2], [3.1, 0.8], [2.2, 2.0]] as const) {
+      for (const [u, v] of [[1.1, 0.8], [2.6, 1.3], [4.2, 0.6]] as const) {
+        const c = at(u, v);
+        if (inside(cfg, c, 8)) add(cfg.level, c.x, c.y, 'ghost');
+      }
+      for (const [u, v] of [[1.6, 1.8], [3.4, 0.5], [5.1, 1.4]] as const) {
         const c = at(u, v);
         if (inside(cfg, c, 6)) add(cfg.level, c.x, c.y, 'cone');
+      }
+    }
+    if (cfg.type === 'lounge') {
+      for (const [u, v] of [[0.4, 1.5], [5.6, 0.4], [2.8, 0.35]] as const) {
+        const plant = at(u, v);
+        if (inside(cfg, plant, 4)) add(cfg.level, plant.x, plant.y, 'plant');
       }
     }
   }
@@ -246,7 +258,7 @@ function buildActors(floors: readonly FloorConfig[], props: readonly Prop[]): Ac
       const desk = desks[i];
       if (!desk) continue;
       const pose: Pose = cfg.type === 'sales' && i === 0 ? 'phone' : 'sit';
-      add(cfg.level, desk.x, desk.y + 10, pose, 0);
+      add(cfg.level, desk.x, desk.y + 16, pose, 0);
     }
     if (cfg.type === 'lounge') {
       const pong = props.find((p) => p.floor === cfg.level && p.kind === 'pong');
@@ -347,125 +359,151 @@ function strokeBox(g: CanvasRenderingContext2D, x: number, y: number, w: number,
 function drawProp(g: CanvasRenderingContext2D, prop: Prop, now: number, hot: boolean): void {
   const { x, y } = prop;
   const blink = ((now / 220) | 0) + prop.phase;
-  if (prop.kind === 'desk') {
-    strokeBox(g, x - 8, y - 3, 16, 7);
-    g.fillStyle = hot || blink % 5 === 0 ? WHITE : SCREEN;
-    g.fillRect(x - 3, y - 9, 7, 5);
-    g.strokeStyle = EDGE;
-    g.strokeRect(x - 3.5, y - 9.5, 8, 6);
+  if (prop.kind === 'desk' || prop.kind === 'ghost') {
+    g.globalAlpha = prop.kind === 'ghost' ? 0.35 : 1;
+    strokeBox(g, x - 14, y - 5, 28, 10);
+    const on = hot || blink % 5 === 0;
+    const screen = (sx: number) => {
+      g.fillStyle = on ? WHITE : SCREEN;
+      g.fillRect(sx, y - 16, 8, 9);
+      g.strokeStyle = EDGE;
+      g.strokeRect(sx - 0.5, y - 16.5, 9, 10);
+    };
+    if (prop.dual) {
+      screen(x - 10);
+      screen(x + 1);
+    } else {
+      screen(x - 5);
+    }
+    g.globalAlpha = 1;
     return;
   }
   if (prop.kind === 'rack') {
-    strokeBox(g, x - 4, y - 12, 8, 16);
-    for (let row = 0; row < 4; row++) {
+    strokeBox(g, x - 7, y - 20, 14, 26);
+    for (let row = 0; row < 5; row++) {
       g.fillStyle = (blink + row) % 3 === 0 ? WHITE : GLOW;
-      g.fillRect(x - 2, y - 10 + row * 3, 2, 2);
+      g.fillRect(x - 4, y - 16 + row * 4, 3, 3);
+      g.fillRect(x + 1, y - 16 + row * 4, 3, 3);
     }
     return;
   }
   if (prop.kind === 'gong') {
     g.strokeStyle = EDGE;
+    g.lineWidth = 1;
     g.beginPath();
     g.moveTo(x, y);
-    g.lineTo(x, y - 8);
+    g.lineTo(x, y - 14);
     g.stroke();
     g.beginPath();
-    g.arc(x, y - 11, 4, 0, Math.PI * 2);
+    g.arc(x, y - 18, 7, 0, Math.PI * 2);
     g.stroke();
     return;
   }
   if (prop.kind === 'kpi' || prop.kind === 'board') {
-    strokeBox(g, x, y - 10, prop.kind === 'kpi' ? 22 : 18, 10);
+    const w = prop.kind === 'kpi' ? 36 : 30;
+    strokeBox(g, x, y - 16, w, 16);
     g.fillStyle = blink % 4 === 0 ? WHITE : GLOW;
-    g.fillRect(x + 2, y - 8, prop.kind === 'kpi' ? 8 : 6, 3);
+    g.fillRect(x + 3, y - 12, 10, 6);
     return;
   }
   if (prop.kind === 'lab') {
-    strokeBox(g, x - 10, y - 4, 20, 6);
-    strokeBox(g, x - 3, y - 9, 6, 5);
+    strokeBox(g, x - 16, y - 6, 32, 10);
+    strokeBox(g, x - 5, y - 14, 10, 8);
     return;
   }
   if (prop.kind === 'pong') {
-    strokeBox(g, x - 12, y - 6, 24, 12);
+    strokeBox(g, x - 18, y - 9, 36, 18);
     g.strokeStyle = WHITE;
     g.beginPath();
-    g.moveTo(x, y - 5);
-    g.lineTo(x, y + 5);
+    g.moveTo(x, y - 8);
+    g.lineTo(x, y + 8);
     g.stroke();
     return;
   }
   if (prop.kind === 'bar') {
-    strokeBox(g, x - 12, y - 6, 24, 8);
+    strokeBox(g, x - 18, y - 8, 36, 12);
     return;
   }
   if (prop.kind === 'stool') {
-    strokeBox(g, x - 2, y - 3, 5, 4);
+    strokeBox(g, x - 4, y - 5, 8, 6);
     return;
   }
   if (prop.kind === 'sofa') {
-    strokeBox(g, x - 10, y - 5, 20, 8);
+    strokeBox(g, x - 16, y - 7, 32, 12);
     g.strokeStyle = EDGE;
-    g.strokeRect(x - 10.5, y - 8.5, 6, 4);
+    g.strokeRect(x - 16.5, y - 13.5, 8, 7);
+    g.strokeRect(x + 8.5, y - 13.5, 8, 7);
     return;
   }
   if (prop.kind === 'reception') {
-    strokeBox(g, x - 12, y - 5, 24, 8);
+    strokeBox(g, x - 18, y - 7, 36, 12);
     return;
   }
   if (prop.kind === 'gate') {
-    strokeBox(g, x - 8, y - 6, 3, 8);
-    strokeBox(g, x + 5, y - 6, 3, 8);
+    strokeBox(g, x - 12, y - 10, 4, 12);
+    strokeBox(g, x + 8, y - 10, 4, 12);
     g.strokeStyle = EDGE;
     g.beginPath();
-    g.moveTo(x - 6, y - 4);
-    g.lineTo(x + 6, y - 4);
+    g.moveTo(x - 8, y - 6);
+    g.lineTo(x + 8, y - 6);
     g.stroke();
     return;
   }
   if (prop.kind === 'plant') {
-    strokeBox(g, x - 2, y - 3, 4, 4);
+    strokeBox(g, x - 4, y - 4, 8, 6);
     g.fillStyle = GLOW;
-    g.fillRect(x - 2, y - 7, 4, 4);
+    g.fillRect(x - 4, y - 12, 8, 8);
+    g.strokeStyle = EDGE;
+    g.strokeRect(x - 4.5, y - 12.5, 9, 9);
     return;
   }
   if (prop.kind === 'cone') {
     g.strokeStyle = EDGE;
     g.beginPath();
-    g.moveTo(x, y - 7);
-    g.lineTo(x - 3, y);
-    g.lineTo(x + 3, y);
+    g.moveTo(x, y - 12);
+    g.lineTo(x - 5, y);
+    g.lineTo(x + 5, y);
     g.closePath();
     g.stroke();
   }
 }
 
 function drawActor(g: CanvasRenderingContext2D, actor: Actor): void {
-  const bob = actor.pose === 'walk' ? Math.abs(Math.sin(actor.phase * 8)) * 1.5 : 0;
+  const bob = actor.pose === 'walk' ? Math.abs(Math.sin(actor.phase * 8)) * 2 : actor.pose === 'sit' ? 0 : Math.sin(actor.phase * 3) * 0.6;
   const y = actor.y - bob;
   const x = actor.x;
-  g.fillStyle = NAVY;
-  g.strokeStyle = EDGE;
+  const typing = actor.pose === 'sit' || actor.pose === 'phone';
+  const arm = typing ? Math.sin(actor.phase * 10) * 2 : 0;
   g.lineWidth = 1;
-  const step = actor.pose === 'walk' ? Math.sin(actor.phase * 8) * 1.5 : 0;
-  g.fillRect(x - 3, y - 6, 2, 6);
-  g.fillRect(x + 1 + step, y - 6, 2, 6);
-  g.strokeRect(x - 3.5, y - 6.5, 3, 7);
-  g.strokeRect(x + 0.5 + step, y - 6.5, 3, 7);
-  g.fillRect(x - 4, y - 12, 8, 6);
-  g.strokeRect(x - 4.5, y - 12.5, 9, 7);
-  g.fillStyle = WHITE;
-  g.fillRect(x - 2, y - 16, 5, 4);
-  if (actor.pose === 'phone') {
-    g.fillStyle = GLOW;
-    g.fillRect(x + 3, y - 13, 2, 3);
+  g.strokeStyle = '#062038';
+  g.fillStyle = GLOW;
+  const step = actor.pose === 'walk' ? Math.sin(actor.phase * 8) * 2 : 0;
+  g.fillRect(x - 4, y - 10, 3, 10);
+  g.fillRect(x + 1 + step, y - 10, 3, 10);
+  g.strokeRect(x - 4.5, y - 10.5, 4, 11);
+  g.strokeRect(x + 0.5 + step, y - 10.5, 4, 11);
+  g.fillRect(x - 6, y - 20, 12, 10);
+  g.strokeRect(x - 6.5, y - 20.5, 13, 11);
+  if (typing) {
+    g.fillStyle = WHITE;
+    g.fillRect(x - 7, y - 14 + arm, 3, 2);
+    g.fillRect(x + 4, y - 14 - arm, 3, 2);
   }
-  if (actor.pose === 'cheer') {
+  g.fillStyle = WHITE;
+  g.fillRect(x - 3, y - 26, 7, 6);
+  g.strokeStyle = EDGE;
+  g.strokeRect(x - 3.5, y - 26.5, 8, 7);
+  if (actor.pose === 'phone') {
+    g.fillStyle = SCREEN;
+    g.fillRect(x + 4, y - 22, 3, 5);
+  }
+  if (actor.pose === 'cheer' || actor.pose === 'swing') {
     g.strokeStyle = WHITE;
     g.beginPath();
-    g.moveTo(x - 5, y - 14);
-    g.lineTo(x - 8, y - 18);
-    g.moveTo(x + 5, y - 14);
-    g.lineTo(x + 8, y - 18);
+    g.moveTo(x - 6, y - 20);
+    g.lineTo(x - 10, y - 28);
+    g.moveTo(x + 6, y - 20);
+    g.lineTo(x + 10, y - 28);
     g.stroke();
   }
 }
@@ -635,10 +673,21 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
       drawRun(ctx, run, now, hot === true);
     }
     ctx.restore();
-    paintText(ctx, 'PatSnap', SIGN_BOARD.x + 22, SIGN_BOARD.y + 26, 4, WHITE);
+    const signScale = 3;
+    const signW = 'PatSnap'.length * 6 * signScale;
+    const signH = 5 * signScale;
+    paintText(
+      ctx,
+      'PatSnap',
+      SIGN_BOARD.x + (SIGN_BOARD.w - signW) / 2,
+      SIGN_BOARD.y + (SIGN_BOARD.h - signH) / 2,
+      signScale,
+      WHITE,
+    );
     for (const floor of floors) {
-      paintText(ctx, floor.label, floor.labelAt.x, floor.labelAt.y, 3, WHITE);
-      paintText(ctx, floor.name, floor.labelAt.x, floor.labelAt.y + 18, 2, GLOW);
+      const block = 5 * 3 + 4 + 5 * 2;
+      paintText(ctx, floor.label, floor.labelAt.x, floor.labelAt.y - block / 2, 3, WHITE);
+      paintText(ctx, floor.name, floor.labelAt.x, floor.labelAt.y - block / 2 + 19, 2, GLOW);
     }
     if (debug) drawDebug(ctx);
   }
