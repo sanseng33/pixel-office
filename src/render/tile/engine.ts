@@ -214,7 +214,7 @@ export async function createTileFloor(
   let hour = 12;
   let burst = 0;
   const queue: DrawItem[] = [];
-  const glowSpots: Pt[] = [];
+  const glowSpots: { x: number; y: number; hot: boolean }[] = [];
 
   const occupiedAt = (x: number, y: number) =>
     people.some((p) => p.pose === 'sit' && p.x === x && p.y === y && p.path.length === 0);
@@ -265,7 +265,6 @@ const HAIR = 0x5aaed4;
 const ARM = 0x6eb6e4;
 const EYE = 0x14324e;
 const LEG = 0x0c3054;
-const SCREEN = 0xf7fdff;
 const INK = 0x07111c;
 
 function raise(p: Pt, h: number): Pt {
@@ -348,23 +347,28 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
   }
 
   function drawMonitor(g: Graphics, mx: number, my: number, towardCamera: boolean, lit: boolean, now: number): void {
-    const center = raise(iso(mx, my, FLOOR_Z), DESK_H + 4);
+    const center = raise(iso(mx, my, FLOOR_Z), DESK_H + 2);
     const px = Math.round(center.x);
     const py = Math.round(center.y);
     g.rect(px, py + 3, 1, 3).fill({ color: ICE });
-    g.rect(px - 4, py - 7, 8, 10).fill({ color: INK });
-    g.rect(px - 4, py - 7, 8, 1).fill({ color: WHITE });
-    g.rect(px - 4, py + 2, 8, 1).fill({ color: ICE });
-    g.rect(px - 4, py - 7, 1, 10).fill({ color: ICE });
-    g.rect(px + 3, py - 7, 1, 10).fill({ color: ICE });
+    g.rect(px - 3, py - 5, 7, 8).fill({ color: INK });
+    g.rect(px - 3, py - 5, 7, 1).fill({ color: lit ? ICE : WHITE });
+    g.rect(px - 3, py + 2, 7, 1).fill({ color: ICE });
+    g.rect(px - 3, py - 5, 1, 8).fill({ color: ICE });
+    g.rect(px + 3, py - 5, 1, 8).fill({ color: ICE });
     if (towardCamera && lit) {
-      g.rect(px - 3, py - 6, 6, 7).fill({ color: SCREEN });
-      const scan = Math.floor(now / 160 + mx * 3) % 5;
-      g.rect(px - 3, py - 6 + scan, 6, 1).fill({ color: 0xc5ecff });
-      glowSpots.push({ x: px, y: py - 2 });
+      g.rect(px - 2, py - 4, 5, 5).fill({ color: 0x6eb6dc });
+      g.rect(px - 2, py - 4, 3, 1).fill({ color: WHITE });
+      const scan = Math.floor(now / 180 + mx * 3) % 4;
+      g.rect(px - 2, py - 2 + scan, 5, 1).fill({ color: WHITE });
+      glowSpots.push({ x: px, y: py - 1, hot: true });
       return;
     }
-    g.rect(px - 3, py - 6, 6, 7).fill({ color: towardCamera ? 0x0c1a28 : 0x050c14 });
+    g.rect(px - 2, py - 4, 5, 5).fill({ color: INK });
+    if (lit) {
+      g.rect(px - 1, py - 4, 3, 1).fill({ color: ICE });
+      glowSpots.push({ x: px, y: py + 3, hot: false });
+    }
   }
 
   function drawDesk(g: Graphics, item: Furn): void {
@@ -402,8 +406,9 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
     const face = item.face ?? 1;
     const occupied = occupiedAt(item.x, item.y);
     const my = face === 1 ? item.y + 0.18 : item.y + 0.82;
-    drawMonitor(g, item.x + 0.42, my, face === 1, occupied, now);
-    drawMonitor(g, item.x + 1.58, my, face === 1, occupied, now);
+    const screenTowardCamera = face === -1;
+    drawMonitor(g, item.x + 0.42, my, screenTowardCamera, occupied, now);
+    drawMonitor(g, item.x + 1.58, my, screenTowardCamera, occupied, now);
   }
 
   function drawChair(g: Graphics, item: Furn): void {
@@ -557,8 +562,11 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
 
     glow.clear();
     for (const spot of glowSpots) {
-      glow.rect(spot.x - 6, spot.y - 7, 12, 14).fill({ color: 0xbfe9ff, alpha: 0.5 });
-      glow.rect(spot.x - 3, spot.y - 4, 6, 8).fill({ color: WHITE, alpha: 0.4 });
+      if (spot.hot) {
+        glow.rect(spot.x - 3, spot.y - 3, 6, 6).fill({ color: ICE, alpha: 0.28 });
+      } else {
+        glow.rect(spot.x - 2, spot.y - 1, 4, 2).fill({ color: ICE, alpha: 0.22 });
+      }
     }
     const hot = now < burst;
     drawPulses(glow, outline, now, hot ? 78 : 46, hot ? 5 : 4);

@@ -60,38 +60,30 @@ function desk(furniture: Furn[], x: number, y: number, face: 1 | -1): void {
 
 function rndLayout(): FloorLayout {
   const furniture: Furn[] = [];
-  // Face-to-face clusters. Each desk is 2 tiles along x, monitors meet in the middle.
-  // A full tile separates desks inside a cluster; two tiles separate the back clusters.
-  desk(furniture, 1, 2, -1);
-  desk(furniture, 4, 2, -1);
-  desk(furniture, 1, 3, 1);
-  desk(furniture, 4, 3, 1);
+  // Two face-to-face rows spanning the floor. Monitors meet on the shared line.
+  // A tile separates desks in a row; two tiles separate the rows.
+  for (const x of [1, 4, 8, 11]) {
+    desk(furniture, x, 2, -1);
+    desk(furniture, x, 3, 1);
+  }
+  for (const x of [1, 5, 9]) {
+    desk(furniture, x, 6, -1);
+    desk(furniture, x, 7, 1);
+  }
 
-  desk(furniture, 8, 2, -1);
-  desk(furniture, 11, 2, -1);
-  desk(furniture, 8, 3, 1);
-  desk(furniture, 11, 3, 1);
-
-  desk(furniture, 1, 7, -1);
-  desk(furniture, 4, 7, -1);
-  desk(furniture, 7, 7, -1);
-  desk(furniture, 1, 8, 1);
-  desk(furniture, 4, 8, 1);
-  desk(furniture, 7, 8, 1);
-
-  if (stepped(9, 9) && stepped(10, 9)) furniture.push({ kind: 'table', x: 9, y: 9, w: 2 });
-  if (stepped(1, 10) && stepped(2, 10)) furniture.push({ kind: 'coffee', x: 1, y: 10, w: 2 });
+  if (stepped(8, 9) && stepped(9, 9)) furniture.push({ kind: 'table', x: 8, y: 9, w: 2 });
+  if (stepped(12, 5) && stepped(13, 5)) furniture.push({ kind: 'coffee', x: 12, y: 5, w: 2 });
   for (const [x, y] of [
     [14, 2],
-    [12, 6],
-    [6, 10],
-    [2, 11],
+    [13, 7],
+    [4, 10],
+    [2, 12],
   ] as const) {
     if (stepped(x, y)) furniture.push({ kind: 'plant', x, y, w: 1 });
   }
   const chat = [
-    { x: 3, y: 9 },
-    { x: 3, y: 10 },
+    { x: 11, y: 4 },
+    { x: 11, y: 5 },
   ].filter((p) => stepped(p.x, p.y));
   return base('rnd', furniture, chat);
 }
