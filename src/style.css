@@ -1,0 +1,32 @@
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  background: #060910;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.kiosk,
+body.kiosk * {
+  cursor: none !important;
+}
+
+canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+}
+
+#boot-error {
+  color: #7fdbff;
+  font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+  padding: 24px;
+  max-width: 36em;
+}
