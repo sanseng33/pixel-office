@@ -156,18 +156,24 @@ function spot(floor: FloorConfig, fx: number, fy: number): Vec2 | null {
 /** 坐着的人脚落在桌面中心前方这一点。 */
 const SEAT = 8;
 
-function takeSpread<T>(items: readonly T[], limit: number): T[] {
-  if (items.length <= limit) return items.slice();
-  const out: T[] = [];
-  const used = new Set<number>();
-  const last = items.length - 1;
-  for (let k = 0; k < limit; k++) {
-    let idx = Math.round((k * last) / Math.max(1, limit - 1));
-    while (used.has(idx) && idx < last) idx += 1;
-    used.add(idx);
-    const item = items[idx];
-    if (item) out.push(item);
+function frontAt(edge: readonly Vec2[], x: number): number {
+  for (let i = 0; i < edge.length - 1; i++) {
+    const a = edge[i];
+    const b = edge[i + 1];
+    if (!a || !b) continue;
+    if ((a.x <= x && x <= b.x) || (b.x <= x && x <= a.x)) {
+      const span = b.x - a.x || 1;
+      return a.y + ((b.y - a.y) * (x - a.x)) / span;
+    }
   }
+  const last = edge[edge.length - 1];
+  return last?.y ?? 0;
+}
+
+function samples(x0: number, x1: number, count: number): number[] {
+  if (count <= 1) return [(x0 + x1) / 2];
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) out.push(x0 + ((x1 - x0) * i) / (count - 1));
   return out;
 }
 
@@ -177,34 +183,24 @@ function placeIso(
   add: (floor: number, x: number, y: number, kind: PropKind, dual?: boolean) => void,
   dual = false,
 ): void {
-  const lip = cfg.origin.y + 26;
+  const edge = cfg.edges[0];
+  if (!edge || edge.length < 3) return;
+  const corner = edge[1];
+  const notch = edge[2];
+  if (!corner || !notch) return;
   const spots: Vec2[] = [];
-  // 左臂：三行，顺着楼板前缘往右下，行距往楼板深处退。
-  const left: readonly { r: number; n: number; i0: number }[] = [
-    { r: 0, n: 4, i0: 0 },
-    { r: 1, n: 4, i0: 0 },
-    { r: 2, n: 3, i0: 1 },
-  ];
-  for (const row of left) {
-    for (let i = 0; i < row.n; i++) {
-      const ii = i + row.i0;
-      spots.push({
-        x: 258 + ii * 32 + row.r * 12,
-        y: lip - 26 + ii * 11 + row.r * -14,
-      });
-    }
+  // 左臂 4 行 × 5 张，第二行和第三行之间留一条过道。
+  const leftX = samples(248, corner.x - 28, 5);
+  for (const inset of [18, 34, 58, 74]) {
+    for (const x of leftX) spots.push({ x, y: frontAt(edge, x) - inset });
   }
-  // 右臂：两行，同一组斜向，从凹口往后。
-  for (let r = 0; r < 2; r++) {
-    for (let i = 0; i < 3; i++) {
-      spots.push({
-        x: 552 + i * 28 + r * 10,
-        y: lip - 28 + i * 10 + r * -14,
-      });
-    }
+  // 右臂 2 行 × 6 张，从凹口一直铺到右侧外缘。
+  const rightX = samples(notch.x + 16, 805, 5);
+  for (const inset of [22, 46]) {
+    for (const x of rightX) spots.push({ x, y: frontAt(edge, x) - inset });
   }
-  const limit = Math.min(cfg.stations || 14, spots.length);
-  for (const p of takeSpread(spots, limit)) {
+  const limit = cfg.stations > 0 ? Math.min(cfg.stations, spots.length) : spots.length;
+  for (const p of spots.slice(0, limit)) {
     if (!pointInPolygon(p, cfg.polygon)) continue;
     add(cfg.level, p.x, p.y, kind, dual);
   }
@@ -224,15 +220,21 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
       const p = spot(cfg, fx, fy);
       if (p) add(cfg.level, p.x, p.y, kind);
     };
+    const edge = cfg.edges[0];
+    const onLip = (x: number, inset: number, kind: PropKind) => {
+      if (!edge) return;
+      const p = { x, y: frontAt(edge, x) - inset };
+      if (pointInPolygon(p, cfg.polygon)) add(cfg.level, p.x, p.y, kind);
+    };
     if (cfg.type === 'sales') {
-      put(0.78, 0.62, 'gong');
-      put(0.42, 0.22, 'board');
+      onLip(300, 46, 'board');
+      onLip(812, 30, 'gong');
     }
     if (cfg.type === 'it') {
-      put(0.84, 0.35, 'rack');
-      put(0.92, 0.58, 'rack');
+      onLip(828, 26, 'rack');
+      onLip(828, 52, 'rack');
     }
-    if (cfg.type === 'rnd' && cfg.level === 7) put(0.8, 0.55, 'lab');
+    if (cfg.type === 'rnd' && cfg.level === 7) onLip(790, 64, 'lab');
     if (cfg.type === 'lounge') {
       put(0.22, 0.32, 'sofa');
       put(0.48, 0.28, 'sofa');
@@ -256,9 +258,9 @@ function buildProps(floors: readonly FloorConfig[]): Prop[] {
     }
     if (cfg.type === 'vacant') {
       placeIso(cfg, 'ghost', add);
-      put(0.25, 0.7, 'cone');
-      put(0.55, 0.4, 'cone');
-      put(0.8, 0.65, 'cone');
+      onLip(300, 40, 'cone');
+      onLip(520, 36, 'cone');
+      onLip(760, 32, 'cone');
     }
   }
   return props;
@@ -272,7 +274,8 @@ function randomInside(floor: FloorConfig, seed: number): Vec2 {
     const x = box.minX + 14 + ((s % 1000) / 1000) * (box.maxX - box.minX - 28);
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
     const y = box.minY + 12 + ((s % 1000) / 1000) * (box.maxY - box.minY - 24);
-    if (pointInPolygon({ x, y }, floor.polygon)) return { x, y };
+    const head = { x, y: y - 26 };
+    if (pointInPolygon({ x, y }, floor.polygon) && pointInPolygon(head, floor.polygon)) return { x, y };
   }
   return { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
 }

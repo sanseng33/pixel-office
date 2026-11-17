@@ -42,43 +42,97 @@ const FRONT_Y: Record<number, number> = {
   7: 326,
 };
 
-/** 楼板前缘在 x=300 处的 y。工位行和电流都相对这条亮边摆。 */
-const LIP_Y: Record<number, number> = {
-  1: 919,
-  2: 812,
-  3: 712,
-  4: 610,
-  5: 507,
-  6: 404,
-  7: 302,
+/**
+ * 每层楼板亮边，顺着画出来的折线：左臂前缘、凹口、右臂前缘，直到右侧。
+ * 1F–3F 的凹口是单独对着亮线量的。
+ */
+const EDGES: Record<number, readonly Vec2[]> = {
+  1: [
+    { x: 220, y: 892 },
+    { x: 400, y: 979 },
+    { x: 480, y: 1019 },
+    { x: 560, y: 995 },
+    { x: 700, y: 924 },
+    { x: 860, y: 846 },
+  ],
+  2: [
+    { x: 220, y: 788 },
+    { x: 430, y: 882 },
+    { x: 540, y: 832 },
+    { x: 620, y: 864 },
+    { x: 740, y: 807 },
+    { x: 860, y: 751 },
+  ],
+  3: [
+    { x: 220, y: 676 },
+    { x: 420, y: 762 },
+    { x: 540, y: 710 },
+    { x: 620, y: 726 },
+    { x: 740, y: 687 },
+    { x: 860, y: 633 },
+  ],
+  4: [
+    { x: 220, y: 575 },
+    { x: 390, y: 648 },
+    { x: 540, y: 587 },
+    { x: 640, y: 628 },
+    { x: 860, y: 537 },
+  ],
+  5: [
+    { x: 220, y: 474 },
+    { x: 390, y: 545 },
+    { x: 540, y: 484 },
+    { x: 640, y: 522 },
+    { x: 860, y: 446 },
+  ],
+  6: [
+    { x: 220, y: 372 },
+    { x: 390, y: 440 },
+    { x: 550, y: 382 },
+    { x: 640, y: 416 },
+    { x: 860, y: 333 },
+  ],
+  7: [
+    { x: 220, y: 286 },
+    { x: 370, y: 343 },
+    { x: 550, y: 281 },
+    { x: 660, y: 323 },
+    { x: 860, y: 250 },
+  ],
 };
 
-function plateOf(level: number, front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'> {
+function ribbon(edge: readonly Vec2[], frontDy: number, backDy: number): Vec2[] {
+  const front = edge.map((p) => ({ x: p.x, y: p.y + frontDy }));
+  const back = [...edge].reverse().map((p) => ({ x: p.x, y: p.y - backDy }));
+  return [...front, ...back];
+}
+
+function legacyPolygon(front: number): Vec2[] {
   const yf = front;
-  const ym = front - 24;
   const yb = front - 86;
-  const lip = LIP_Y[level] ?? front - 26;
-  // 顺着楼板自己的折线：左臂前缘、凹口、右臂前缘、右侧收边。
-  const edge: readonly Vec2[] = [
-    { x: 210, y: lip - 34 },
-    { x: 400, y: lip + 33 },
-    { x: 545, y: lip - 24 },
-    { x: 645, y: lip + 14 },
-    { x: 830, y: lip - 52 },
+  return [
+    { x: 246, y: yf - 12 },
+    { x: 524, y: yf - 16 },
+    { x: 524, y: yf - 16 },
+    { x: 820, y: yf - 20 },
+    { x: 820, y: yb },
+    { x: 246, y: yb },
   ];
+}
+
+function plateOf(level: number, front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'> {
+  const edge = EDGES[level] ?? EDGES[4] ?? [];
+  const a = edge[0] ?? { x: 250, y: front };
+  const b = edge[1] ?? { x: a.x + 40, y: a.y + 16 };
+  const span = Math.max(1, b.x - a.x);
+  // 办公层的可走区域是亮边往楼板里收的一条 L 带，背后多留一截给头顶。
+  const polygon = level >= 3 ? ribbon(edge, 16, 112) : legacyPolygon(front);
   return {
-    polygon: [
-      { x: 246, y: yf - 12 },
-      { x: 524, y: yf - 16 },
-      { x: 524, y: ym + 8 },
-      { x: 820, y: ym + 4 },
-      { x: 820, y: yb },
-      { x: 246, y: yb },
-    ],
-    origin: { x: 258, y: lip - 26 },
-    axisU: { x: 32, y: 11 },
-    axisV: { x: 12, y: -14 },
-    labelAt: { x: 108, y: yf - 28 },
+    polygon,
+    origin: { x: a.x + 30, y: a.y - 16 },
+    axisU: { x: 34, y: ((b.y - a.y) / span) * 34 },
+    axisV: { x: 10, y: -16 },
+    labelAt: { x: 108, y: front - 28 },
     edges: [edge],
   };
 }
@@ -117,7 +171,7 @@ export const floors: readonly FloorConfig[] = [
     label: '3F',
     name: 'SALES',
     title: '销售',
-    stations: 14,
+    stations: 30,
     occupancy: 0.4,
     people: 2,
   }),
@@ -127,7 +181,7 @@ export const floors: readonly FloorConfig[] = [
     label: '4F',
     name: 'IT',
     title: 'IT 机房',
-    stations: 12,
+    stations: 30,
     occupancy: 0.4,
     people: 2,
   }),
@@ -137,7 +191,7 @@ export const floors: readonly FloorConfig[] = [
     label: '5F',
     name: 'R&D',
     title: '研发',
-    stations: 14,
+    stations: 30,
     occupancy: 0.4,
     people: 2,
   }),
@@ -147,7 +201,7 @@ export const floors: readonly FloorConfig[] = [
     label: '6F',
     name: 'VACANT',
     title: '空置',
-    stations: 0,
+    stations: 30,
     occupancy: 0,
     people: 0,
   }),
@@ -157,7 +211,7 @@ export const floors: readonly FloorConfig[] = [
     label: '7F',
     name: 'R&D',
     title: '研发（实验台）',
-    stations: 12,
+    stations: 30,
     occupancy: 0.4,
     people: 2,
   }),
