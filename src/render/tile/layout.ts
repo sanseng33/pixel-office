@@ -11,6 +11,8 @@ export interface Furn {
   y: number;
   /** Desk spans this many tiles in +x. */
   w: number;
+  /** 1 = sitter on the +y side, -1 = sitter on the -y side. Monitors face the sitter. */
+  face?: 1 | -1;
 }
 
 export interface FloorLayout {
@@ -55,29 +57,34 @@ function base(role: FloorType, furniture: readonly Furn[], chat: readonly { x: n
   };
 }
 
+function pair(furniture: Furn[], xs: number[], y: number): void {
+  for (const x of xs) {
+    if (stepped(x, y)) furniture.push({ kind: 'desk', x, y, w: 1, face: -1 });
+    if (stepped(x, y + 1)) furniture.push({ kind: 'desk', x, y: y + 1, w: 1, face: 1 });
+  }
+}
+
 function rndLayout(): FloorLayout {
   const furniture: Furn[] = [];
-  const rows = [2, 3, 4, 6, 7, 8];
-  const cols = [1, 2, 4, 5];
-  for (const y of rows) {
-    for (const x of cols) {
-      if (stepped(x, y)) furniture.push({ kind: 'desk', x, y, w: 1 });
-    }
-  }
-  for (const x of [7, 8, 9]) {
+  // Face-to-face clusters, with a full tile of aisle between them.
+  pair(furniture, [1, 2], 2);
+  pair(furniture, [4, 5, 6], 2);
+  pair(furniture, [1, 2], 5);
+  pair(furniture, [4, 5, 6], 5);
+  for (const x of [8, 9, 10]) {
     if (stepped(x, 1)) furniture.push({ kind: 'table', x, y: 1, w: 1 });
   }
-  furniture.push({ kind: 'coffee', x: 9, y: 3, w: 1 });
+  if (stepped(9, 4)) furniture.push({ kind: 'coffee', x: 9, y: 4, w: 1 });
   for (const [x, y] of [
-    [10, 1],
+    [10, 3],
+    [10, 5],
     [1, 10],
-    [10, 4],
   ] as const) {
     if (stepped(x, y)) furniture.push({ kind: 'plant', x, y, w: 1 });
   }
   const chat = [
-    { x: 8, y: 3 },
     { x: 8, y: 4 },
+    { x: 8, y: 3 },
   ].filter((p) => stepped(p.x, p.y));
   return base('rnd', furniture, chat);
 }
