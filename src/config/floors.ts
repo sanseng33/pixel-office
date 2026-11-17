@@ -120,18 +120,20 @@ function legacyPolygon(front: number): Vec2[] {
   ];
 }
 
+/** 沿后墙（楼板前缘的方向）和沿侧墙（进深）的两条等距轴。 */
+const AXIS_U = { x: 0.934, y: 0.357 };
+const AXIS_V = { x: 0.928, y: -0.372 };
+
 function plateOf(level: number, front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'> {
   const edge = EDGES[level] ?? EDGES[4] ?? [];
   const a = edge[0] ?? { x: 250, y: front };
-  const b = edge[1] ?? { x: a.x + 40, y: a.y + 16 };
-  const span = Math.max(1, b.x - a.x);
-  // 办公层的可走区域是亮边往楼板里收的一条 L 带，背后多留一截给头顶。
-  const polygon = level >= 3 ? ribbon(edge, 16, 112) : legacyPolygon(front);
+  // 可走区域是亮边内侧的楼板，背后再留一截，坐着的人头顶不会顶到边界。
+  const polygon = level >= 3 ? ribbon(edge, -8, 118) : legacyPolygon(front);
   return {
     polygon,
-    origin: { x: a.x + 30, y: a.y - 16 },
-    axisU: { x: 34, y: ((b.y - a.y) / span) * 34 },
-    axisV: { x: 10, y: -16 },
+    origin: { x: a.x, y: a.y },
+    axisU: AXIS_U,
+    axisV: AXIS_V,
     labelAt: { x: 108, y: front - 28 },
     edges: [edge],
   };
@@ -171,7 +173,7 @@ export const floors: readonly FloorConfig[] = [
     label: '3F',
     name: 'SALES',
     title: '销售',
-    stations: 30,
+    stations: 24,
     occupancy: 0.4,
     people: 2,
   }),
@@ -181,7 +183,7 @@ export const floors: readonly FloorConfig[] = [
     label: '4F',
     name: 'IT',
     title: 'IT 机房',
-    stations: 30,
+    stations: 24,
     occupancy: 0.4,
     people: 2,
   }),
@@ -191,7 +193,7 @@ export const floors: readonly FloorConfig[] = [
     label: '5F',
     name: 'R&D',
     title: '研发',
-    stations: 30,
+    stations: 24,
     occupancy: 0.4,
     people: 2,
   }),
@@ -201,7 +203,7 @@ export const floors: readonly FloorConfig[] = [
     label: '6F',
     name: 'VACANT',
     title: '空置',
-    stations: 30,
+    stations: 24,
     occupancy: 0,
     people: 0,
   }),
@@ -211,7 +213,7 @@ export const floors: readonly FloorConfig[] = [
     label: '7F',
     name: 'R&D',
     title: '研发（实验台）',
-    stations: 30,
+    stations: 24,
     occupancy: 0.4,
     people: 2,
   }),

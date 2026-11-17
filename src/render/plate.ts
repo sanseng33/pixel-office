@@ -4,7 +4,6 @@ import {
   PLATE_SRC,
   ROOF_EDGE,
   SIGN_BOARD,
-  isoPoint,
   pointInPolygon,
 } from '../config/floors.ts';
 import type { FloorConfig, Vec2 } from '../config/floors.ts';
@@ -170,40 +169,75 @@ function frontAt(edge: readonly Vec2[], x: number): number {
   return last?.y ?? 0;
 }
 
-function samples(x0: number, x1: number, count: number): number[] {
-  if (count <= 1) return [(x0 + x1) / 2];
-  const out: number[] = [];
-  for (let i = 0; i < count; i++) out.push(x0 + ((x1 - x0) * i) / (count - 1));
-  return out;
-}
-
 function placeIso(
   cfg: FloorConfig,
   kind: PropKind,
   add: (floor: number, x: number, y: number, kind: PropKind, dual?: boolean) => void,
   dual = false,
 ): void {
-  const edge = cfg.edges[0];
-  if (!edge || edge.length < 3) return;
-  const corner = edge[1];
-  const notch = edge[2];
-  if (!corner || !notch) return;
+  const poly = cfg.polygon;
+  if (poly.length < 3) return;
+  const { axisU: U, axisV: V, origin } = cfg;
+  const det = U.x * V.y - U.y * V.x;
+  if (Math.abs(det) < 1e-4) return;
+  const toUV = (p: Vec2) => {
+    const dx = p.x - origin.x;
+    const dy = p.y - origin.y;
+    return { u: (dx * V.y - dy * V.x) / det, v: (dy * U.x - dx * U.y) / det };
+  };
+  const fromUV = (u: number, v: number): Vec2 => ({
+    x: origin.x + u * U.x + v * V.x,
+    y: origin.y + u * U.y + v * V.y,
+  });
+  let minU = Infinity;
+  let maxU = -Infinity;
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (const p of poly) {
+    const uv = toUV(p);
+    if (uv.u < minU) minU = uv.u;
+    if (uv.u > maxU) maxU = uv.u;
+    if (uv.v < minV) minV = uv.v;
+    if (uv.v > maxV) maxV = uv.v;
+  }
+  const du = maxU - minU;
+  const dv = maxV - minV;
+  const u0 = minU + du * 0.08;
+  const u1 = maxU - du * 0.08;
+  // 三排深度：前两排靠近，中间留一条过道，后排靠里。
+  const depth = [0.34, 0.5, 0.76];
+  const columns = 10;
   const spots: Vec2[] = [];
-  // 左臂 4 行 × 5 张，第二行和第三行之间留一条过道。
-  const leftX = samples(248, corner.x - 28, 5);
-  for (const inset of [18, 34, 58, 74]) {
-    for (const x of leftX) spots.push({ x, y: frontAt(edge, x) - inset });
+  for (let i = 0; i < columns; i++) {
+    const u = u0 + ((u1 - u0) * i) / (columns - 1);
+    let lo = Infinity;
+    let hi = -Infinity;
+    const steps = 72;
+    for (let k = 0; k <= steps; k++) {
+      const v = minV - dv * 0.15 + ((dv * 1.3) * k) / steps;
+      const p = fromUV(u, v);
+      if (!pointInPolygon(p, poly)) continue;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    if (!Number.isFinite(lo) || hi - lo < 18) continue;
+    for (const f of depth) {
+      const p = fromUV(u, lo + (hi - lo) * f);
+      // 楼梯在 x≈170，工位从楼板内部开始，并且离开发光前缘。
+      if (p.x < 292) continue;
+      if (!pointInPolygon(p, poly)) continue;
+      const lip = cfg.edges[0];
+      if (lip && frontAt(lip, p.x) - p.y < 20) continue;
+      spots.push(p);
+    }
   }
-  // 右臂 2 行 × 6 张，从凹口一直铺到右侧外缘。
-  const rightX = samples(notch.x + 16, 805, 5);
-  for (const inset of [22, 46]) {
-    for (const x of rightX) spots.push({ x, y: frontAt(edge, x) - inset });
-  }
-  const limit = cfg.stations > 0 ? Math.min(cfg.stations, spots.length) : spots.length;
-  for (const p of spots.slice(0, limit)) {
-    if (!pointInPolygon(p, cfg.polygon)) continue;
-    add(cfg.level, p.x, p.y, kind, dual);
-  }
+  const cap = cfg.stations > 0 ? cfg.stations : spots.length;
+  const kept = spots.length <= cap ? spots : spots.filter((_, index) => {
+    const slot = Math.round((index * (cap - 1)) / Math.max(1, spots.length - 1));
+    const prev = index === 0 ? -1 : Math.round(((index - 1) * (cap - 1)) / Math.max(1, spots.length - 1));
+    return slot !== prev;
+  });
+  for (const p of kept) add(cfg.level, p.x, p.y, kind, dual);
 }
 
 function buildProps(floors: readonly FloorConfig[]): Prop[] {
@@ -833,13 +867,11 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
       }
       g.closePath();
       g.stroke();
-      g.fillStyle = '#ffe14a';
-      for (let u = 0; u < 8; u++) {
-        for (let v = 0; v < 5; v++) {
-          const p = isoPoint(floor, u, v);
-          if (!pointInPolygon(p, floor.polygon)) continue;
-          g.fillRect(p.x, p.y, 2, 2);
-        }
+      g.fillStyle = '#ffffff';
+      for (const prop of props) {
+        if (prop.floor !== floor.level) continue;
+        if (prop.kind !== 'desk' && prop.kind !== 'ghost') continue;
+        g.fillRect(prop.x - 2, prop.y - 2, 4, 4);
       }
       g.fillStyle = '#ffffff';
       g.fillRect(floor.labelAt.x - 2, floor.labelAt.y - 2, 4, 4);
