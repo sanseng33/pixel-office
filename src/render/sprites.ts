@@ -21,357 +21,279 @@ const INK: Record<string, RGBA> = {
 };
 
 function flip(rows: readonly string[]): string[] {
-  return rows.map((row) => row.split('').reverse().join(''));
+  return rows.map((row) => [...row].reverse().join(''));
 }
 
-/** 5×9 people. Bottom row is the feet. */
-const SE = [
-  '.www.',
-  'wdwdw',
-  '.bbb.',
-  'bbwbb',
-  '.b.b.',
-  '.b.b.',
-  'd...d',
-];
-const SE2 = [
-  '.www.',
-  'wdwdw',
-  '.bbb.',
-  'bwbwb',
-  '..b.b',
-  '.b.b.',
-  'd...d',
-];
-const SIT = [
-  '.www.',
-  'wdwdw',
-  '.bbb.',
-  'bbwbb',
-  '.b.b.',
-];
-const SIT2 = [
-  '.www.',
-  'wdddw',
-  'bbbbb',
-  'bwbwb',
-  '.b.b.',
-];
-const PH = [
-  '.www.',
-  'wdwdc',
-  '.bbb.',
-  'bbwbb',
-  '.b.b.',
-];
-const PH2 = [
-  '.www.',
-  'wdw.c',
-  '.bbb.',
-  'bwbwb',
-  '.b.b.',
-];
-const NE = [
-  '.bbb.',
-  'bbbbb',
-  '.bwb.',
-  'bbwbb',
-  '.b.b.',
-  '.b.b.',
-  'd...d',
-];
-const NE2 = [
-  '.bbb.',
-  'bbbbb',
-  '.bwb.',
-  'bwbwb',
-  '..b.b',
-  '.b..b',
-  'd...d',
-];
-const CHEER = [
-  'b.w.b',
-  'bwwwb',
-  'wdwdw',
-  '.bbb.',
-  'bbwbb',
-  '.b.b.',
-  'd...d',
-];
-const STRETCH = [
-  'bwwwb',
-  'b.w.b',
-  'wdwdw',
-  '.bbb.',
-  '.b.b.',
-  'd...d',
+const WALK = [
+  [
+    '..wwwww..',
+    '.wwwwwww.',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '..wwwww..',
+    '...bbb...',
+    '..bbbbb..',
+    '.bbwwbb..',
+    '..bbbbb..',
+    '..bb.bb..',
+    '..b...b..',
+    '.dd...dd.',
+  ],
+  [
+    '..wwwww..',
+    '.wwwwwww.',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '..wwwww..',
+    '...bbb...',
+    '..bbbbb..',
+    '.bbwwbb..',
+    '..bbbbb..',
+    '...b.b...',
+    '..b...b..',
+    '.dd...dd.',
+  ],
+  [
+    '..wwwww..',
+    '.wwwwwww.',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '..wwwww..',
+    '...bbb...',
+    '.bbbbbbb.',
+    '..bwwb...',
+    '..bbbbb..',
+    '..b.b.b..',
+    '.b.....b.',
+    'dd.....dd',
+  ],
 ];
 
-const PROPS: Record<string, { rows: string[]; ax: number; ay: number }> = {
-  desk: {
-    ax: 4,
-    ay: 7,
-    rows: [
-      '.kkkkkk.',
-      'kwwwwwwk',
-      'kwwwwwwk',
-      '.bbbbbb.',
-      'bbbbbbbb',
-      'bb.bb.bb',
-    ],
-  },
-  dual: {
-    ax: 5,
-    ay: 7,
-    rows: [
-      'kk....kk',
-      'kww..wwk',
-      'kww..wwk',
-      '.bbbbbb.',
-      'bbbbbbbb',
-      'bb.bb.bb',
-    ],
-  },
-  stand: {
-    ax: 4,
-    ay: 9,
-    rows: [
-      '.kkkkkk.',
-      'kwwwwwwk',
-      'kwwwwwwk',
-      '..bbbb..',
-      '...bb...',
-      '...bb...',
-      '..b..b..',
-      'bbbbbbbb',
-    ],
-  },
-  bench: {
-    ax: 7,
-    ay: 7,
-    rows: [
-      '...kkkkkk...',
-      '..kwwwwwwk..',
-      '..kwwwwwwk..',
-      '...bbbbbb...',
-      '..b......b..',
-      '.bbb....bbb.',
-    ],
-  },
-  rack: {
-    ax: 3,
-    ay: 15,
-    rows: [
-      'bbbbbb',
-      'bwwwwb',
-      'bbbbbb',
-      'bccccb',
-      'bbbbbb',
-      'bwwwwb',
-      'bbbbbb',
-      'bccccb',
-      'bbbbbb',
-      'bwwwwb',
-      'bbbbbb',
-      'bccccb',
-      'bbbbbb',
-      'bb..bb',
-    ],
-  },
-  sofa: {
-    ax: 8,
-    ay: 7,
-    rows: [
-      'bb..........bb',
-      'bbbbbbbbbbbbbb',
-      'bwwwwwwwwwwwwb',
-      'bbbbbbbbbbbbbb',
-      '.bb........bb.',
-      '..b........b..',
-    ],
-  },
-  coffee: {
-    ax: 4,
-    ay: 9,
-    rows: [
-      '.bbbbbb.',
-      '.bkkkkb.',
-      '.bwwwwb.',
-      '.bbbbbb.',
-      '..bwwb..',
-      '.bbbbbb.',
-      '..b..b..',
-    ],
-  },
-  pong: {
-    ax: 8,
-    ay: 6,
-    rows: [
-      '.bbbbbbbbbbbb.',
-      'bwwwwwwwwwwwwb',
-      'bwwwwwwwwwwwwb',
-      'bwwwwwbbwwwwwb',
-      '.bbbbbbbbbbbb.',
-      '..b........b..',
-    ],
-  },
-  plant: {
-    ax: 2,
-    ay: 7,
-    rows: [
-      '.b.b.',
-      'b.b.b',
-      '.bbb.',
-      '..b..',
-      '.www.',
-      'bbbbb',
-    ],
-  },
-  box: {
-    ax: 3,
-    ay: 6,
-    rows: [
-      '.bbbb.',
-      'bwwwwb',
-      'bbbbbb',
-      'bwwwwb',
-      'bbbbbb',
-      '.b..b.',
-    ],
-  },
-  box2: {
-    ax: 3,
-    ay: 10,
-    rows: [
-      '.bbbb.',
-      'bwwwwb',
-      'bbbbbb',
-      '.bbbb.',
-      'bwwwwb',
-      'bbbbbb',
-      'bwwwwb',
-      'bbbbbb',
-      '.b..b.',
-    ],
-  },
-  board: {
-    ax: 6,
-    ay: 8,
-    rows: [
-      'bbbbbbbbbbbb',
-      'bwwwwwwwwwwb',
-      'bw.ww..ww.wb',
-      'bwwwwwwwwwwb',
-      'bw..ww.ww.wb',
-      'bwwwwwwwwwwb',
-      'bbbbbbbbbbbb',
-    ],
-  },
-  screen: {
-    ax: 8,
-    ay: 10,
-    rows: [
-      'bbbbbbbbbbbbbbbb',
-      'bkkkkkkkkkkkkkkb',
-      'bkkkkkkkkkkkkkkb',
-      'bkkkkkkkkkkkkkkb',
-      'bkkkkkkkkkkkkkkb',
-      'bkkkkkkkkkkkkkkb',
-      'bbbbbbbbbbbbbbbb',
-      '......bb........',
-    ],
-  },
-  reception: {
-    ax: 8,
-    ay: 6,
-    rows: [
-      'bbbbbbbbbbbbbbbb',
-      'bwwwwwwwwwwwwwwb',
-      'bbbbbbbbbbbbbbbb',
-      '.bb..........bb.',
-      '..bb........bb..',
-    ],
-  },
-  gate: {
-    ax: 2,
-    ay: 6,
-    rows: [
-      'b.b.b',
-      'bbbbb',
-      '..b..',
-      '..b..',
-      '.bbb.',
-      'b...b',
-    ],
-  },
-  plinth: {
-    ax: 3,
-    ay: 6,
-    rows: [
-      '..ww..',
-      '.bbbb.',
-      '..bb..',
-      '.bbbb.',
-      'bbbbbb',
-    ],
-  },
-  gong: {
-    ax: 3,
-    ay: 8,
-    rows: ['..ww..', '.w..w.', 'w.ww.w', '.w..w.', '..bb..', '...b..', '..bbb.'],
-  },
-  cooler: {
-    ax: 2,
-    ay: 8,
-    rows: [
-      'bbbbb',
-      'bwwwb',
-      'bbbbb',
-      'bkkkb',
-      'bwwbb',
-      'bbbbb',
-      'b.b.b',
-    ],
-  },
-  bubble: {
-    ax: 2,
-    ay: 4,
-    rows: ['bbbbb', 'b.w.b', 'bbbbb', '.bb..'],
-  },
-  bubble2: {
-    ax: 2,
-    ay: 4,
-    rows: ['bbbbb', 'bw.wb', 'bbbbb', '.bb..'],
-  },
+const SIT = [
+  [
+    '..wwwww..',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '..bbbbb..',
+    '.bbwwbb..',
+    '..bbbbb..',
+    '.bbbbbbb.',
+    '..b...b..',
+  ],
+  [
+    '..wwwww..',
+    '.w.w.w.w.',
+    '.wwwwwww.',
+    '.bbbbbbb.',
+    '..bwwb...',
+    '..bbbbb..',
+    '.bbbbbbb.',
+    '..b...b..',
+  ],
+];
+
+const PHONE = [
+  [
+    '..wwwww..',
+    '.ww.w.wc.',
+    '.wwwwwwb.',
+    '..bbbbb..',
+    '.bbwwbb..',
+    '..bbbbb..',
+    '.bbbbbbb.',
+    '..b...b..',
+  ],
+  [
+    '..wwwww..',
+    '.ww.w.w.c',
+    '.wwwwww..',
+    '..bbbbb..',
+    '.bbwwbb..',
+    '..bbbbb..',
+    '.bbbbbbb.',
+    '..b...b..',
+  ],
+];
+
+const CHAT = [
+  [
+    '..wwwww..',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '..bbb.b..',
+    '.bbbbbb..',
+    '..bbwwb..',
+    '..bbbbb..',
+    '..b...b..',
+    '.dd...dd.',
+  ],
+  [
+    '..wwwww..',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '...bbb...',
+    '..bbbbb..',
+    '.bwwbbb..',
+    '..bbbbb..',
+    '..b...b..',
+    '.dd...dd.',
+  ],
+];
+
+const SWING = [
+  [
+    'b.wwwww..',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '..bbbbb..',
+    '.bbwwbb..',
+    '..bbbbb..',
+    '..b...b..',
+    '.dd...dd.',
+  ],
+  [
+    '..wwwww.b',
+    '.ww.w.ww.',
+    '.wwwwwww.',
+    '..bbbbb..',
+    '.bbwwbb..',
+    '..bbbbb..',
+    '..b...b..',
+    '.dd...dd.',
+  ],
+];
+
+const CHEER = [
+  'b.wwwww.b',
+  '.ww.w.ww.',
+  'bwwwwwwwb',
+  '..bbbbb..',
+  '.bbwwbb..',
+  '..bbbbb..',
+  '..b...b..',
+  '.dd...dd.',
+];
+
+const PROPS: Record<string, string[]> = {
+  desk: [
+    '.kkkkkkkk.',
+    'kwwwwwwwwk',
+    'kwwwwwwwwk',
+    'kwwwwwwwwk',
+    '.bbbbbbbb.',
+    'bbbbbbbbbb',
+    'b.bb..bb.b',
+  ],
+  dual: [
+    'kkkk...kkkk.',
+    'kwwk...kwwk.',
+    'kwwk...kwwk.',
+    '.bbb...bbb..',
+    'bbbbbbbbbbbb',
+    'bb..b..b..bb',
+  ],
+  rack: [
+    'bbbbbb',
+    'bwwwwb',
+    'bbbbbb',
+    'bccccb',
+    'bbbbbb',
+    'bwwwwb',
+    'bbbbbb',
+    'bccccb',
+    'bbbbbb',
+    'bwwwwb',
+    'bbbbbb',
+    'bccccb',
+    'bbbbbb',
+    'b.bb.b',
+    'bbbbbb',
+  ],
+  pong: [
+    '.bbbbbbbbbbbbbbbbbb.',
+    'bwwwwwwwwwwwwwwwwwwb',
+    'bwwwwwwwwbbwwwwwwwwb',
+    'bwwwwwwwwwwwwwwwwwwb',
+    '.bbbbbbbbbbbbbbbbbb.',
+    '..b..............b..',
+  ],
+  bar: [
+    'bbbbbbbbbbbbbbbbbbbb',
+    'bwwwwwwwwwwwwwwwwwwb',
+    'bbbbbbbbbbbbbbbbbbbb',
+    'bb................bb',
+    '.bb..............bb.',
+  ],
+  stool: ['bbbb', 'bwwb', '.bb.', 'b..b'],
+  sofa: [
+    'bb............bb',
+    'bbbbbbbbbbbbbbbb',
+    'bwwwwwwwwwwwwwwb',
+    'bbbbbbbbbbbbbbbb',
+    '.bb..........bb.',
+  ],
+  plant: ['.b.b.b.', 'bb.b.bb', '..bbb..', '...b...', '..www..', '.bbbbb.'],
+  screen: [
+    'bbbbbbbbbbbbbbbbbbbb',
+    'bkkkkkkkkkkkkkkkkkkb',
+    'bkkkkkkkkkkkkkkkkkkb',
+    'bkkkkkkkkkkkkkkkkkkb',
+    'bkkkkkkkkkkkkkkkkkkb',
+    'bkkkkkkkkkkkkkkkkkkb',
+    'bbbbbbbbbbbbbbbbbbbb',
+  ],
+  board: [
+    'bbbbbbbbbbbbbbbb',
+    'bwwwwwwwwwwwwwwb',
+    'bw.ww..ww..w.wwb',
+    'bwwwwwwwwwwwwwwb',
+    'bw.ww.ww..ww.wwb',
+    'bbbbbbbbbbbbbbbb',
+  ],
+  gong: [
+    '..wwwww..',
+    '.w.....w.',
+    'w..www..w',
+    'w.......w',
+    'w..www..w',
+    '.w.....w.',
+    '..bbbbb..',
+    '...b.b...',
+    '..bbbbb..',
+  ],
+  cone: [
+    '...w...',
+    '..w.w..',
+    '..bbb..',
+    '.bwwwb.',
+    '.bbbbb.',
+    'bbbbbbb',
+    '..b.b..',
+  ],
+  box: ['bbbbbb', 'bwwwwb', 'bbbbbb', 'bwwwwb', 'bbbbbb', 'bb..bb'],
+  hvac: [
+    '.bbbbbbbb.',
+    'bkkkkkkkkb',
+    'bkbkbkbkbb',
+    'bkkkkkkkkb',
+    'bbbbbbbbbb',
+    'b..b...b.b',
+  ],
+  bench: [
+    '..kkkkkkkk..',
+    '.kwwwwwwwwk.',
+    '.kwwwwwwwwk.',
+    'bbbbbbbbbbbb',
+    'b..bbbb..b.b',
+    '.b..bb..b...',
+  ],
+  bubble: ['bbbbb', 'b.w.b', 'bbbbb', '.bb..'],
+  bubble2: ['bbbbb', 'bw.wb', 'bbbbb', '.bb..'],
 };
 
 function feet(rows: readonly string[]): { rows: string[]; ax: number; ay: number } {
   const w = rows[0]?.length ?? 1;
   return { rows: [...rows], ax: w >> 1, ay: rows.length - 1 };
-}
-
-function buildRaw(): Record<string, { rows: string[]; ax: number; ay: number }> {
-  const out: Record<string, { rows: string[]; ax: number; ay: number }> = {};
-  const add = (name: string, rows: readonly string[], mirror = true) => {
-    out[name] = feet(rows);
-    if (mirror) out[`${name}F`] = feet(flip(rows));
-  };
-  add('se0', SE);
-  add('se1', SE2);
-  add('ne0', NE);
-  add('ne1', NE2);
-  add('sit0', SIT);
-  add('sit1', SIT2);
-  add('ph0', PH);
-  add('ph1', PH2);
-  out.cheer = feet(CHEER);
-  out.stretch = feet(STRETCH);
-  for (const key of Object.keys(PROPS)) {
-    const prop = PROPS[key];
-    if (!prop) continue;
-    out[key] = { rows: prop.rows.map((row) => row.replace(/ /g, '')), ax: prop.ax, ay: prop.ay };
-  }
-  return out;
 }
 
 export interface Atlas {
@@ -380,8 +302,20 @@ export interface Atlas {
 }
 
 export function buildAtlas(): Atlas {
-  const raw = buildRaw();
-  const size = 256;
+  const raw: Record<string, { rows: string[]; ax: number; ay: number }> = {};
+  const add = (name: string, rows: readonly string[]) => {
+    raw[name] = feet(rows);
+    raw[`${name}F`] = feet(flip(rows));
+  };
+  WALK.forEach((rows, i) => add(`w${i}`, rows));
+  SIT.forEach((rows, i) => add(`s${i}`, rows));
+  PHONE.forEach((rows, i) => add(`p${i}`, rows));
+  CHAT.forEach((rows, i) => add(`c${i}`, rows));
+  SWING.forEach((rows, i) => add(`g${i}`, rows));
+  raw.cheer = feet(CHEER);
+  for (const [name, rows] of Object.entries(PROPS)) raw[name] = feet(rows);
+
+  const size = 384;
   const pix = new Pix(size, size);
   const frames: Record<string, Frame> = {};
   let cx = 1;
@@ -393,7 +327,7 @@ export function buildAtlas(): Atlas {
       cy += rowH + 1;
       rowH = 0;
     }
-    if (cy + h + 1 >= size) throw new Error('sprite atlas overflow');
+    if (cy + h + 1 >= size) throw new Error(`atlas overflow at ${cx},${cy} for ${w}x${h}`);
     const pos = { x: cx, y: cy };
     cx += w + 1;
     if (h > rowH) rowH = h;
@@ -406,26 +340,24 @@ export function buildAtlas(): Atlas {
     const h = sprite.rows.length;
     const w = sprite.rows[0]?.length ?? 0;
     for (const row of sprite.rows) {
-      if (row.length !== w) throw new Error(`sprite ${name} row width ${row.length} != ${w} (${row})`);
+      if (row.length !== w) throw new Error(`sprite ${name} width ${row.length} != ${w} [${row}]`);
     }
     const pos = pack(w, h);
     for (let y = 0; y < h; y++) {
       const row = sprite.rows[y] ?? '';
       for (let x = 0; x < w; x++) {
         const color = INK[row[x] ?? '.'];
-        if (!color) continue;
-        pix.px(pos.x + x, pos.y + y, color);
+        if (color) pix.px(pos.x + x, pos.y + y, color);
       }
     }
     frames[name] = { x: pos.x, y: pos.y, w, h, ax: sprite.ax, ay: sprite.ay };
   }
 
-  const texts: { name: string; text: string; scale: number; font: 'ui' | 'logo' }[] = [
-    { name: 'logo', text: 'PatSnap', scale: 2, font: 'logo' },
-    { name: 'tDEAL', text: 'DEAL', scale: 2, font: 'ui' },
-    { name: 'tDEPLOY', text: 'DEPLOY', scale: 1, font: 'ui' },
-    { name: 'tVACANT', text: 'VACANT', scale: 2, font: 'ui' },
-    { name: 'tHI', text: 'HI', scale: 1, font: 'ui' },
+  const texts = [
+    { name: 'logo', text: 'PatSnap', scale: 2, font: 'logo' as const },
+    { name: 'tDEAL', text: 'DEAL', scale: 2, font: 'ui' as const },
+    { name: 'tDEPLOY', text: 'DEPLOY', scale: 1, font: 'ui' as const },
+    { name: 'tHI', text: 'HI', scale: 1, font: 'ui' as const },
   ];
   for (const item of texts) {
     const gw = item.font === 'logo' ? 5 : 3;
@@ -448,10 +380,39 @@ export function buildAtlas(): Atlas {
   return { canvas, frames };
 }
 
-/** Monitor window inside a prop sprite, relative to its top-left. */
-export const SCREEN_OF: Record<string, { x: number; y: number; w: number; h: number }> = {
-  desk: { x: 1, y: 1, w: 6, h: 2 },
-  dual: { x: 1, y: 1, w: 2, h: 2 },
-  stand: { x: 1, y: 1, w: 6, h: 2 },
-  screen: { x: 1, y: 1, w: 14, h: 5 },
+export const SCREEN_OF: Record<string, { x: number; y: number; w: number; h: number }[]> = {
+  desk: [{ x: 1, y: 1, w: 8, h: 3 }],
+  dual: [
+    { x: 1, y: 1, w: 3, h: 2 },
+    { x: 8, y: 1, w: 3, h: 2 },
+  ],
+  screen: [{ x: 1, y: 1, w: 18, h: 5 }],
+  bench: [{ x: 2, y: 1, w: 8, h: 2 }],
 };
+
+export const RACK_LEDS: readonly (readonly [number, number])[] = [
+  [1, 1],
+  [2, 1],
+  [3, 1],
+  [4, 1],
+  [1, 3],
+  [2, 3],
+  [3, 3],
+  [4, 3],
+  [1, 5],
+  [2, 5],
+  [3, 5],
+  [4, 5],
+  [1, 7],
+  [2, 7],
+  [3, 7],
+  [4, 7],
+  [1, 9],
+  [2, 9],
+  [3, 9],
+  [4, 9],
+  [1, 11],
+  [2, 11],
+  [3, 11],
+  [4, 11],
+];

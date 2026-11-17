@@ -1,40 +1,33 @@
 import { VIEW } from '../config/display.ts';
 
 /**
- * True 2:1 dimetric projection (45° isometric pixel art).
- * screenX = (x - y) * HW
- * screenY = (x + y) * HH - (level - 1) * PITCH
- * One step in x or y moves HW pixels across and HH pixels down, HW = 2 * HH.
+ * Dollhouse cutaway. The floor grid uses 2:1 steps (a step back is +2px across
+ * and -1px up, scaled by the tile), but each storey is only a few tiles deep.
+ * Wall height is the vertical distance between slabs, so the floor above sits
+ * on the ceiling and does not cover the people below.
+ *
+ * A pure 2:1 diamond of a wide floor is half as tall as it is wide, and seven
+ * of those cannot stack in a square without hiding each other (the v2 plates).
+ * This is the Project Highrise / Tiny Tower compromise: iso floor grid, full
+ * storey height, camera-facing wall removed.
  */
-export const HW = 8;
-export const HH = 4;
-export const COLS = 20;
-export const ROWS = 10;
-export const PITCH = 64;
-export const SLAB = 4;
+export const FLOOR_X = 68;
+export const FLOOR_W = 378;
+export const SKEW = 52;
+export const DEPTH = 30;
+export const PITCH = 66;
+export const SLAB = 6;
+export const STAIR_X = 16;
+export const FRONT_1 = VIEW - 10;
 
-export const ORIGIN_X = 268;
-export const ORIGIN_Y = 392;
-
-export function screenX(tx: number, ty: number): number {
-  return ORIGIN_X + (tx - ty) * HW;
+export function frontY(level: number): number {
+  return FRONT_1 - (level - 1) * PITCH;
 }
 
-export function screenY(tx: number, ty: number, level: number): number {
-  return ORIGIN_Y + (tx + ty) * HH - (level - 1) * PITCH;
+export function fx(u: number, v: number): number {
+  return FLOOR_X + u * FLOOR_W + v * SKEW;
 }
 
-/** A tile is covered when the floor above overlaps it. Top floor is fully visible. */
-export function tileVisible(tx: number, ty: number, level: number, top: number): boolean {
-  if (level >= top) return true;
-  const cy = screenY(tx + 0.5, ty + 0.5, level);
-  const lip = screenY(COLS, ROWS, level + 1) + SLAB + 1;
-  return cy >= lip;
+export function fy(level: number, v: number): number {
+  return frontY(level) - v * DEPTH;
 }
-
-export function inBounds(tx: number, ty: number): boolean {
-  return tx >= 0 && ty >= 0 && tx < COLS && ty < ROWS;
-}
-
-export const WORLD_W = VIEW;
-export const WORLD_H = VIEW;
