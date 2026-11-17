@@ -63,8 +63,8 @@ function fit(): void {
   const scale = Math.max(1, Math.floor(side / VIEW));
   const px = VIEW * scale;
   office.resize(px);
-  office.canvas.style.width = `${px}px`;
-  office.canvas.style.height = `${px}px`;
+  office.el.style.width = `${px}px`;
+  office.el.style.height = `${px}px`;
 }
 
 let drift = 0;
@@ -72,7 +72,7 @@ const driftEvery = params.get('burn') === 'fast' ? BURN_IN_FAST_MS : BURN_IN_INT
 window.setInterval(() => {
   drift = (drift + 1) % BURN_IN_PATH.length;
   const offset = BURN_IN_PATH[drift] ?? [0, 0];
-  office.canvas.style.transform = `translate(${offset[0]}px, ${offset[1]}px)`;
+  office.el.style.transform = `translate(${offset[0]}px, ${offset[1]}px)`;
 }, driftEvery);
 
 office.canvas.addEventListener('webglcontextlost', (event) => {
@@ -80,7 +80,7 @@ office.canvas.addEventListener('webglcontextlost', (event) => {
   window.location.reload();
 });
 
-appRoot.appendChild(office.canvas);
+appRoot.appendChild(office.el);
 fit();
 window.addEventListener('resize', fit);
 

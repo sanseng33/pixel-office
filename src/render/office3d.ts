@@ -1,7 +1,6 @@
 import {
   BoxGeometry,
   BufferGeometry,
-  CanvasTexture,
   Color,
   ConeGeometry,
   CylinderGeometry,
@@ -14,9 +13,7 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
-  NearestFilter,
   OrthographicCamera,
-  PlaneGeometry,
   Scene,
   SRGBColorSpace,
   Vector3,
@@ -30,13 +27,18 @@ import type { FloorConfig, FloorType } from '../config/floors.ts';
 import type { OfficeEvent, OfficeEventType } from '../events/source.ts';
 
 const W = 14;
-const D = 7;
-const STOREY = 3.2;
-const SX = 1.65;
+const D = 14;
+const STOREY = 5.1;
+const SX = 1;
 const SY = 1;
 const SZ = 1;
-const SLAB = 0.26;
-const FILL = 0x0c1a2c;
+const SLAB = 0.3;
+/** Full-width band against the back wall. The rest of the near side is the left wing plus an open corner. */
+const BACK = 5.4;
+/** Left wing that runs to the front. The near corner (high x, high z) is cut away. */
+const WING = 5.2;
+const STEP = 0.12;
+const FILL = 0x0a1626;
 const EDGE = 0x7fdbff;
 const WHITE = 0xffffff;
 const BRIGHT = 0xbff4ff;
@@ -84,6 +86,7 @@ interface Path {
 
 export interface OfficeView {
   canvas: HTMLCanvasElement;
+  el: HTMLElement;
   update(dt: number, now: number): void;
   resize(displayPx: number): void;
   push(event: OfficeEvent): void;
@@ -94,7 +97,7 @@ export interface OfficeView {
 export function createOffice(configs: readonly FloorConfig[]): OfficeView {
   const floors = [...configs].sort((a, b) => a.level - b.level);
   const scene = new Scene();
-  scene.background = new Color(0x060910);
+  scene.background = new Color(0x07111c);
 
   const fills: BufferGeometry[] = [];
   const edge: number[] = [];
@@ -130,7 +133,7 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
   for (const cfg of floors) buildStorey(cfg, addBox, addPath);
   buildRoof(addBox, addPath);
   buildStairs(addBox);
-  buildFrame(addBox);
+  buildFrame(addBox, addPath);
 
   const shell = new Group();
   shell.scale.set(SX, SY, SZ);
@@ -143,19 +146,17 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
   eg.setAttribute('position', new Float32BufferAttribute(edge, 3));
   shell.add(new LineSegments(eg, edgeMat));
 
-  for (const cfg of floors) addLabel(scene, cfg);
-
   const desks = collectDesks(floors);
-  const deskMesh = makeInstances(desks, new BoxGeometry(1.05, 0.72, 0.62), 0, 0.36, 0, fillMat, false);
-  const chairMesh = makeInstances(desks, new BoxGeometry(0.46, 0.7, 0.42), 0, 0.4, 0.58, fillMat, false);
-  const monGeo = new BoxGeometry(0.78, 0.52, 0.08);
-  const monMesh = makeInstances(desks, monGeo, 0, 1.05, -0.18, whiteMat, true);
+  const deskMesh = makeInstances(desks, new BoxGeometry(1.55, 0.82, 1.05), 0, 0.41, 0, fillMat, false);
+  const chairMesh = makeInstances(desks, new BoxGeometry(0.64, 0.95, 0.58), 0, 0.5, 0.88, fillMat, false);
+  const monGeo = new BoxGeometry(1.15, 0.78, 0.1);
+  const monMesh = makeInstances(desks, monGeo, 0, 1.38, -0.32, whiteMat, true);
   scene.add(deskMesh, chairMesh, monMesh);
   const furn: number[] = [];
   for (const d of desks) {
-    stampBox(furn, 1.05, 0.72, 0.62, d.x * SX, d.y * SY + 0.36, d.z * SZ);
-    stampBox(furn, 0.46, 0.7, 0.42, d.x * SX, d.y * SY + 0.4, (d.z + 0.58) * SZ);
-    stampBox(furn, 0.78, 0.52, 0.08, d.x * SX, d.y * SY + 1.05, (d.z - 0.18) * SZ);
+    stampBox(furn, 1.55, 0.82, 1.05, d.x * SX, d.y * SY + 0.41, d.z * SZ);
+    stampBox(furn, 0.64, 0.95, 0.58, d.x * SX, d.y * SY + 0.5, (d.z + 0.88) * SZ);
+    stampBox(furn, 1.15, 0.78, 0.1, d.x * SX, d.y * SY + 1.38, (d.z - 0.32) * SZ);
   }
   const fg = new BufferGeometry();
   fg.setAttribute('position', new Float32BufferAttribute(furn, 3));
@@ -170,24 +171,25 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
   for (const p of people) scene.add(p.group);
 
   const sign = makeSign();
-  sign.position.set(W * 0.42 * SX, (floors.length * STOREY + 1.05) * SY, D * 0.28 * SZ);
+  sign.position.set(6.4, 7 * STOREY + SLAB + 1.45, 2.15);
   sign.rotation.y = Math.PI / 4;
   scene.add(sign);
 
   const pulses = makePulses(paths);
   for (const m of pulses.meshes) scene.add(m);
 
-  const target = new Vector3(W * 0.42 * SX, floors.length * STOREY * 0.43 * SY, D * 0.36 * SZ);
-  const dist = 80;
-  const s = dist / Math.sqrt(3);
-  const basePos = new Vector3(target.x + s, target.y + s * 1.08, target.z + s);
-  const camera = new OrthographicCamera(-16.2, 16.2, 16.2, -16.2, 0.1, 500);
+  const target = new Vector3(W * 0.42, floors.length * STOREY * 0.53, D * 0.42);
+  const dist = 96;
+  const elev = 40 * Math.PI / 180;
+  const horiz = dist * Math.cos(elev) * Math.SQRT1_2;
+  const basePos = new Vector3(target.x + horiz, target.y + dist * Math.sin(elev), target.z + horiz);
+  const camera = new OrthographicCamera(-20.4, 20.4, 20.4, -20.4, 0.1, 700);
   camera.position.copy(basePos);
   camera.lookAt(target);
 
   const renderer = new WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(1);
-  renderer.setClearColor(0x060910, 1);
+  renderer.setClearColor(0x07111c, 1);
   renderer.outputColorSpace = SRGBColorSpace;
   const composer = new EffectComposer(renderer);
   const pixelPass = new RenderPixelatedPass(2, scene, camera);
@@ -216,18 +218,71 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
     } else if (ev.type === 'visitorArrived') {
       const who = people.find((p) => p.floor === ev.level && p.role === 2);
       if (who) {
-        who.x = 2;
-        who.z = D - 1.2;
-        who.tx = W * 0.45;
-        who.tz = D * 0.55;
+        who.x = 2.2;
+        who.z = 12.2;
+        who.tx = 3.6;
+        who.tz = 8.4;
         who.moving = 1;
         who.kind = 'walk';
       }
     }
   }
 
+  const wrap = document.createElement('div');
+  wrap.style.position = 'relative';
+  wrap.style.lineHeight = '0';
+  const overlay = document.createElement('canvas');
+  overlay.style.position = 'absolute';
+  overlay.style.inset = '0';
+  overlay.style.width = '100%';
+  overlay.style.height = '100%';
+  overlay.style.pointerEvents = 'none';
+  renderer.domElement.style.display = 'block';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  wrap.append(renderer.domElement, overlay);
+  const octx = overlay.getContext('2d');
+  const proj = new Vector3();
+  const labels = floors.map((cfg) => ({
+    label: cfg.label,
+    name: cfg.name,
+    at: new Vector3(-0.15, (cfg.level - 1) * STOREY + 2.5, 1.2),
+  }));
+  const signAt = new Vector3(6.4, 7 * STOREY + SLAB + 1.45, 2.15);
+
+  function drawOverlay(): void {
+    if (!octx) return;
+    const w = overlay.width;
+    const h = overlay.height;
+    if (w === 0 || h === 0) return;
+    octx.clearRect(0, 0, w, h);
+    for (const lab of labels) {
+      proj.copy(lab.at).project(camera);
+      const x = (proj.x * 0.5 + 0.5) * w;
+      const y = (-proj.y * 0.5 + 0.5) * h;
+      paintText(octx, lab.label, x - 118, y - 22, 5, '#ffffff');
+      paintText(octx, lab.name, x - 118, y + 8, 3, '#7FDBFF');
+    }
+    proj.copy(signAt).project(camera);
+    const px = (proj.x * 0.5 + 0.5) * w;
+    const py = (-proj.y * 0.5 + 0.5) * h;
+    const word = 'PatSnap';
+    const scale = 6;
+    const width = word.length * 6 * scale;
+    const height = 5 * scale;
+    const left = px - width / 2;
+    const top = py - height / 2;
+    octx.fillStyle = '#071018';
+    octx.fillRect(left - 12, top - 10, width + 24, height + 20);
+    octx.strokeStyle = '#7FDBFF';
+    octx.lineWidth = 4;
+    octx.strokeRect(left - 12, top - 10, width + 24, height + 20);
+    paintText(octx, word, left, top, scale, '#ffffff');
+  }
+
   return {
     canvas: renderer.domElement,
+    el: wrap,
     levelsFor(type) {
       if (type === 'dealClosed') return levelsOf('sales');
       if (type === 'deploySuccess') return levelsOf('rnd');
@@ -241,13 +296,16 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
       hour = h;
       const night = h >= 20 || h < 6;
       const dusk = !night && (h >= 17 || h < 7);
-      renderer.setClearColor(night ? 0x04060c : dusk ? 0x050810 : 0x060910, 1);
+      renderer.setClearColor(night ? 0x04060c : dusk ? 0x050810 : 0x07111c, 1);
+      scene.background = new Color(night ? 0x04060c : dusk ? 0x050810 : 0x07111c);
     },
     resize(displayPx) {
       const pixelSize = Math.max(2, Math.round(displayPx / VIEW));
       renderer.setSize(displayPx, displayPx, false);
       composer.setSize(displayPx, displayPx);
       pixelPass.setPixelSize(pixelSize);
+      overlay.width = displayPx;
+      overlay.height = displayPx;
     },
     update(dt, now) {
       const sec = Math.min(0.05, dt);
@@ -277,6 +335,7 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
         if (p.kind === 'cheer' && p.timer <= 0) p.kind = p.home;
       }
       composer.render();
+      drawOverlay();
     },
   };
 
@@ -293,8 +352,8 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
         if (p.home === 'walk' || p.role === 2) {
           const ox = p.tx;
           const oz = p.tz;
-          p.tx = p.role === 2 ? (ox > W * 0.5 ? 2.2 : W - 2.2) : ox > 7 ? 3 : 11;
-          p.tz = oz;
+          p.tx = p.role === 2 ? (ox > 3.5 ? 2.2 : 4.4) : ox > 6 ? 2.4 : 10.5;
+          p.tz = oz > BACK ? (oz > 10 ? 8.2 : 11.2) : oz < 2 ? 3.6 : 1.6;
         } else {
           p.moving = 0;
           p.kind = p.home;
@@ -312,7 +371,7 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
       p.arm.rotation.x = Math.sin(p.phase * 8) * 0.6;
     } else {
       const sit = p.home === 'sit' || p.home === 'phone' || p.kind === 'sit' || p.kind === 'phone';
-      const y = p.baseY - (sit ? 0.45 : 0) + Math.sin(p.phase * (p.kind === 'swing' ? 10 : 3)) * (p.kind === 'cheer' ? 0.12 : 0.03);
+      const y = p.baseY - (sit ? 0.85 : 0) + Math.sin(p.phase * (p.kind === 'swing' ? 10 : 3)) * (p.kind === 'cheer' ? 0.16 : 0.04);
       p.group.position.set(p.x * SX, y * SY, p.z * SZ);
       p.arm.rotation.x = p.kind === 'swing' ? Math.sin(p.phase * 10) * 1.1 : p.kind === 'phone' ? -0.8 : Math.sin(p.phase * 6) * 0.35;
       if (p.kind === 'cheer') p.arm.rotation.z = -1.2;
@@ -321,7 +380,8 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
         p.seed = (Math.imul(p.seed, 1664525) + 1013904223) >>> 0;
         const r = (p.seed % 1000) / 1000;
         if (r > 0.72 && (p.home === 'sit' || p.home === 'phone')) {
-          p.tx = Math.min(W - 1.5, Math.max(1.5, p.x + (r > 0.85 ? 2.2 : -2.2)));
+          const nx = p.x + (r > 0.85 ? 2.4 : -2.4);
+          p.tx = p.z > BACK ? Math.min(WING - 0.8, Math.max(1.4, nx)) : Math.min(12.2, Math.max(1.6, nx));
           p.tz = p.z;
           p.moving = 1;
           p.kind = 'walk';
@@ -341,33 +401,46 @@ function buildStorey(
 ): void {
   const y0 = (cfg.level - 1) * STOREY;
   const ySlab = y0 + SLAB / 2;
-  addLSlab(addBox, ySlab);
-  addBox(0.16, STOREY - SLAB, D, 0.08, y0 + SLAB + (STOREY - SLAB) / 2, D / 2);
-  addBox(W, STOREY - SLAB, 0.16, W / 2, y0 + SLAB + (STOREY - SLAB) / 2, 0.08);
+  addLSlab(addBox, ySlab, cfg.level);
+  const wallH = STOREY - SLAB;
+  const wallY = y0 + SLAB + wallH / 2;
+  addBox(0.16, wallH, D, 0.08, wallY, D / 2);
+  addBox(W, wallH, 0.16, W / 2, wallY, 0.08);
   const yb = y0 + SLAB;
-  const yt = y0 + STOREY - 0.02;
+  const yt = y0 + STOREY - 0.04;
   const grid: number[] = [];
-  for (let z = 0.4; z <= D - 0.2; z += 1.7) grid.push(0.2, yb, z, 0.2, yt, z);
-  for (let y = yb + 0.9; y < yt; y += 1.15) grid.push(0.2, y, 0.15, 0.2, y, D - 0.15);
-  for (let x = 0.6; x <= W - 0.2; x += 1.75) grid.push(x, yb, 0.2, x, yt, 0.2);
-  for (let y = yb + 0.9; y < yt; y += 1.15) grid.push(0.15, y, 0.2, W - 0.15, y, 0.2);
+  for (let z = 0.8; z <= D - 0.4; z += 1.8) grid.push(0.22, yb, z, 0.22, yt, z);
+  for (let y = yb + 1.15; y < yt; y += 1.35) grid.push(0.22, y, 0.2, 0.22, y, D - 0.2);
+  for (let x = 0.8; x <= W - 0.4; x += 1.8) grid.push(x, yb, 0.22, x, yt, 0.22);
+  for (let y = yb + 1.15; y < yt; y += 1.35) grid.push(0.2, y, 0.22, W - 0.2, y, 0.22);
+  const gy = yb + 0.045;
+  for (let x = 2.2; x < W - 0.4; x += 2.4) {
+    grid.push(x, gy, 0.35, x, gy, BACK - 0.2);
+    if (x < WING - 0.2) grid.push(x, gy, BACK, x, gy, D - 0.35);
+  }
+  for (let z = 2.2; z < D - 0.4; z += 2.4) {
+    const x1 = z < BACK ? W - 0.35 : WING - 0.2;
+    if (x1 > 0.6) grid.push(0.35, gy, z, x1, gy, z);
+  }
   pushLines(grid);
   addPath(
     [
       new Vector3(0, yb, 0),
       new Vector3(W, yb, 0),
-      new Vector3(W, yb, D),
+      new Vector3(W, yb, BACK),
+      new Vector3(WING, yb, BACK),
+      new Vector3(WING, yb, D),
       new Vector3(0, yb, D),
       new Vector3(0, yb, 0),
     ],
     1,
   );
-  const bolt = new Vector3(0.4, yb + 1.4, 1);
+  const bolt = new Vector3(0.5, yb + 1.8, 1.2);
   pushLines([
     bolt.x, bolt.y, bolt.z,
-    bolt.x + 0.8, bolt.y + 0.7, bolt.z + 0.2,
-    bolt.x + 0.5, bolt.y + 1.3, bolt.z - 0.1,
-    bolt.x + 1.3, bolt.y + 0.9, bolt.z + 0.5,
+    bolt.x + 0.9, bolt.y + 0.85, bolt.z + 0.25,
+    bolt.x + 0.45, bolt.y + 1.55, bolt.z - 0.1,
+    bolt.x + 1.45, bolt.y + 1.05, bolt.z + 0.55,
   ]);
 }
 
@@ -376,32 +449,42 @@ function pushLines(pts: number[]): void {
   for (const n of pts) looseLines.push(n);
 }
 
-const CUT_X = 4.2;
-const CUT_Z = 2.3;
-
-function addLSlab(addBox: (w: number, h: number, d: number, x: number, y: number, z: number) => void, y: number): void {
-  const depth = D - CUT_Z;
-  addBox(W, SLAB, depth, W / 2, y, depth / 2);
-  const width = W - CUT_X;
-  addBox(width, SLAB, CUT_Z, width / 2, y, D - CUT_Z / 2);
+function addLSlab(
+  addBox: (w: number, h: number, d: number, x: number, y: number, z: number) => void,
+  y: number,
+  level: number,
+): void {
+  // Each higher slab steps back a little on the near edges so the floor below stays in view.
+  const inset = (level - 1) * STEP;
+  const back = Math.max(3.2, BACK - inset);
+  const wing = Math.max(3.2, WING - inset * 0.6);
+  const span = Math.max(wing + 1, W - inset);
+  addBox(span, SLAB, back, span / 2, y, back / 2);
+  const wingD = D - inset * 0.4 - back;
+  if (wingD > 0.5) addBox(wing, SLAB, wingD, wing / 2, y, back + wingD / 2);
 }
 
 function buildRoof(addBox: (w: number, h: number, d: number, x: number, y: number, z: number) => void, addPath: (pts: Vector3[]) => void): void {
   const y = 7 * STOREY;
-  addLSlab(addBox, y + SLAB / 2);
-  const py = y + SLAB + 0.22;
-  addBox(W, 0.45, 0.12, W / 2, py, 0.06);
-  addBox(W - CUT_X, 0.45, 0.12, (W - CUT_X) / 2, py, D - 0.06);
-  addBox(0.12, 0.45, D, 0.06, py, D / 2);
-  addBox(0.12, 0.45, D - CUT_Z, W - 0.06, py, (D - CUT_Z) / 2);
-  addBox(0.12, 0.45, CUT_Z, W - CUT_X, py, D - CUT_Z / 2);
-  addBox(1.4, 0.7, 1.1, W - 2.2, y + SLAB + 0.4, 1.4);
-  addBox(1.2, 0.55, 0.9, W - 3.8, y + SLAB + 0.32, 2.6);
-  addBox(0.08, 1.5, 0.08, 2.2, y + SLAB + 0.9, 1.6);
+  addLSlab(addBox, y + SLAB / 2, 8);
+  const py = y + SLAB + 0.28;
+  const back = Math.max(3.2, BACK - 7 * STEP);
+  const wing = Math.max(3.2, WING - 7 * STEP * 0.6);
+  const span = Math.max(wing + 1, W - 7 * STEP);
+  addBox(span, 0.5, 0.14, span / 2, py, 0.07);
+  addBox(wing, 0.5, 0.14, wing / 2, py, D - 0.1);
+  addBox(0.14, 0.5, D, 0.07, py, D / 2);
+  addBox(0.14, 0.5, back, span - 0.07, py, back / 2);
+  addBox(0.14, 0.5, D - back, wing, py, back + (D - back) / 2);
+  addBox(1.8, 0.9, 1.4, span - 2.4, y + SLAB + 0.55, 1.6);
+  addBox(1.5, 0.7, 1.2, span - 4.6, y + SLAB + 0.45, 3.2);
+  addBox(0.1, 2.1, 0.1, 2.4, y + SLAB + 1.2, 1.5);
   addPath([
     new Vector3(0, y + SLAB, 0),
-    new Vector3(W, y + SLAB, 0),
-    new Vector3(W, y + SLAB, D),
+    new Vector3(span, y + SLAB, 0),
+    new Vector3(span, y + SLAB, back),
+    new Vector3(wing, y + SLAB, back),
+    new Vector3(wing, y + SLAB, D),
     new Vector3(0, y + SLAB, D),
     new Vector3(0, y + SLAB, 0),
   ]);
@@ -410,26 +493,36 @@ function buildRoof(addBox: (w: number, h: number, d: number, x: number, y: numbe
 function buildStairs(addBox: (w: number, h: number, d: number, x: number, y: number, z: number) => void): void {
   for (let level = 0; level < 7; level++) {
     const y0 = level * STOREY + SLAB;
-    for (let s = 0; s < 6; s++) {
-      const t = s / 6;
-      addBox(1.15, 0.12, 0.55, 0.85, y0 + t * (STOREY - SLAB), 0.45 + s * 0.7);
+    const steps = 8;
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      addBox(1.35, 0.16, 0.62, 1.15, y0 + t * (STOREY - SLAB), 0.7 + s * 0.55);
     }
   }
 }
 
-function buildFrame(addBox: (w: number, h: number, d: number, x: number, y: number, z: number) => void): void {
+function buildFrame(
+  addBox: (w: number, h: number, d: number, x: number, y: number, z: number) => void,
+  addPath: (pts: Vector3[]) => void,
+): void {
   const h = 7 * STOREY + SLAB;
   const posts: readonly (readonly [number, number])[] = [
-    [0.12, 0.12],
-    [W - 0.12, 0.12],
-    [0.12, D - 0.12],
-    [W - 0.12, D - 0.12],
+    [0.16, 0.16],
+    [W - 0.16, 0.16],
+    [0.16, D - 0.16],
+    [WING, BACK],
   ];
-  for (const p of posts) addBox(0.22, h, 0.22, p[0], h / 2, p[1]);
-  const sx = W - 1.7;
-  const sz = 1.2;
-  for (const dx of [-0.55, 0.55]) {
-    for (const dz of [-0.55, 0.55]) addBox(0.14, h, 0.14, sx + dx, h / 2, sz + dz);
+  for (const p of posts) {
+    addBox(0.28, h, 0.28, p[0], h / 2, p[1]);
+    addPath([new Vector3(p[0], 0.2, p[1]), new Vector3(p[0], h, p[1])]);
+  }
+  const sx = W - 1.8;
+  const sz = 2.1;
+  for (const dx of [-0.7, 0.7]) {
+    for (const dz of [-0.7, 0.7]) {
+      addBox(0.16, h, 0.16, sx + dx, h / 2, sz + dz);
+      addPath([new Vector3(sx + dx, 0.2, sz + dz), new Vector3(sx + dx, h, sz + dz)]);
+    }
   }
 }
 
@@ -461,6 +554,10 @@ const GLYPH: Record<string, string[]> = {
   '6': ['01110', '10000', '11110', '10001', '01110'],
   '7': ['11111', '00010', '00100', '01000', '01000'],
   ' ': ['00000', '00000', '00000', '00000', '00000'],
+  a: ['00000', '01110', '00001', '01111', '10001'],
+  t: ['00100', '01110', '00100', '00100', '00011'],
+  n: ['00000', '10110', '11001', '10001', '10001'],
+  p: ['00000', '11110', '10001', '11110', '10000'],
 };
 
 function paintText(g: CanvasRenderingContext2D, text: string, x: number, y: number, scale: number, color: string): void {
@@ -479,48 +576,30 @@ function paintText(g: CanvasRenderingContext2D, text: string, x: number, y: numb
   }
 }
 
-function addLabel(scene: Scene, cfg: FloorConfig): void {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 96;
-  const g = canvas.getContext('2d');
-  if (!g) return;
-  g.fillStyle = '#071018';
-  g.fillRect(0, 0, 256, 96);
-  g.strokeStyle = '#7FDBFF';
-  g.lineWidth = 6;
-  g.strokeRect(3, 3, 250, 90);
-  paintText(g, cfg.label, 10, 8, 7, '#ffffff');
-  paintText(g, cfg.name, 10, 52, 5, '#7FDBFF');
-  const tex = new CanvasTexture(canvas);
-  tex.magFilter = NearestFilter;
-  tex.minFilter = NearestFilter;
-  tex.colorSpace = SRGBColorSpace;
-  const mesh = new Mesh(new PlaneGeometry(3.4, 1.05), new MeshBasicMaterial({ map: tex }));
-  const y = (cfg.level - 1) * STOREY + 1.15;
-  mesh.position.set(2.4 * SX, y * SY, 5.5 * SZ);
-  mesh.rotation.y = Math.PI / 4;
-  scene.add(mesh);
-}
-
 function collectDesks(floors: readonly FloorConfig[]): Desk[] {
   const out: Desk[] = [];
   for (const cfg of floors) {
     if (cfg.type !== 'sales' && cfg.type !== 'it' && cfg.type !== 'rnd') continue;
     const y = (cfg.level - 1) * STOREY + SLAB;
     const rows = cfg.type === 'it'
-      ? [{ z: 3.15, n: 6, x0: 1.6, x1: 8.4 }, { z: 5.15, n: 6, x0: 1.6, x1: 8.2 }]
+      ? [
+          { z: 4.15, n: 4, x0: 2.1, x1: 9.2 },
+          { z: 2.35, n: 4, x0: 2.1, x1: 9.2 },
+          { z: 8.2, n: 3, x0: 2.0, x1: 4.6 },
+          { z: 10.6, n: 3, x0: 2.0, x1: 4.6 },
+        ]
       : [
-          { z: 1.55, n: 8, x0: 1.7, x1: 12.2 },
-          { z: 3.15, n: 8, x0: 1.7, x1: 12.2 },
-          { z: 5.15, n: 6, x0: 1.7, x1: 8.4 },
+          { z: 4.2, n: 6, x0: 2.0, x1: 12.6 },
+          { z: 2.4, n: 6, x0: 2.0, x1: 12.6 },
+          { z: 8.2, n: 3, x0: 1.8, x1: 4.3 },
+          { z: 10.6, n: 3, x0: 1.8, x1: 4.3 },
         ];
     let placed = 0;
     for (const row of rows) {
       if (placed >= cfg.stations) break;
       const count = Math.min(row.n, cfg.stations - placed);
       for (let c = 0; c < count; c++) {
-        const x = count === 1 ? row.x0 : row.x0 + c * ((row.x1 - row.x0) / (count - 1));
+        const x = count === 1 ? row.x0 : row.x0 + c * ((row.x1 - row.x0) / Math.max(1, count - 1));
         out.push({ floor: cfg.level, x, z: row.z, y });
         placed += 1;
       }
@@ -576,78 +655,87 @@ function addUnique(group: Group, floors: readonly FloorConfig[]): Mesh | null {
   for (const cfg of floors) {
     const y = (cfg.level - 1) * STOREY + SLAB;
     if (cfg.type === 'sales') {
-      const disc = new Mesh(new CylinderGeometry(0.55, 0.55, 0.08, 16), whiteMat);
-      disc.position.set(11.6, y + 1.55, 4.4);
+      const disc = new Mesh(new CylinderGeometry(0.85, 0.85, 0.12, 16), whiteMat);
+      disc.position.set(11.2, y + 2.15, 3.6);
       disc.rotation.x = Math.PI / 2;
       group.add(disc);
       gong = disc;
-      group.add(post(11.6, y + 0.75, 4.4));
-      const kpi = new Mesh(new BoxGeometry(2.4, 1.15, 0.08), whiteMat);
-      kpi.position.set(6.2, y + 1.9, 0.28);
+      group.add(post(11.2, y + 1.05, 3.6));
+      const kpi = new Mesh(new BoxGeometry(3.4, 1.7, 0.1), whiteMat);
+      kpi.position.set(7.2, y + 2.6, 0.35);
       group.add(kpi);
     }
     if (cfg.type === 'it') {
       for (let i = 0; i < 4; i++) {
-        const rack = new Mesh(new BoxGeometry(0.7, 2.1, 0.55), fillMat);
-        rack.position.set(11.2 + (i % 2) * 0.9, y + 1.15, 1.3 + Math.floor(i / 2) * 0.9);
-        rack.name = 'rack';
+        const rack = new Mesh(new BoxGeometry(1.15, 3.3, 0.85), fillMat);
+        rack.position.set(10.6 + (i % 2) * 1.35, y + 1.7, 1.5 + Math.floor(i / 2) * 1.5);
         rack.add(new LineSegments(new EdgesGeometry(rack.geometry), edgeMat));
         group.add(rack);
-        const leds = new Mesh(new BoxGeometry(0.08, 1.5, 0.02), brightMat);
-        leds.position.set(rack.position.x + 0.2, y + 1.2, rack.position.z + 0.28);
-        group.add(leds);
+        for (let row = 0; row < 6; row++) {
+          for (let col = 0; col < 3; col++) {
+            const led = new Mesh(new BoxGeometry(0.12, 0.12, 0.06), (row + col) % 2 === 0 ? brightMat : whiteMat);
+            led.position.set(rack.position.x - 0.28 + col * 0.28, y + 0.55 + row * 0.42, rack.position.z + 0.46);
+            group.add(led);
+          }
+        }
       }
     }
     if (cfg.type === 'lobby') {
-      group.add(box(3.2, 0.9, 1.1, 4.2, y + 0.55, 2.2));
-      group.add(box(0.18, 1.1, 0.18, 2.2, y + 0.7, 5.4));
-      group.add(box(0.18, 1.1, 0.18, 3.4, y + 0.7, 5.4));
-      group.add(box(1.4, 0.08, 0.08, 2.8, y + 0.9, 5.4));
-      const screen = new Mesh(new BoxGeometry(2.2, 1.2, 0.08), whiteMat);
-      screen.position.set(8.5, y + 1.8, 0.25);
+      group.add(box(3.6, 1.05, 1.3, 4.4, y + 0.6, 2.4));
+      group.add(box(0.22, 1.5, 0.22, 2.4, y + 0.85, 7.4));
+      group.add(box(0.22, 1.5, 0.22, 4.2, y + 0.85, 7.4));
+      group.add(box(2.0, 0.1, 0.1, 3.3, y + 1.15, 7.4));
+      const screen = new Mesh(new BoxGeometry(3.2, 1.8, 0.1), whiteMat);
+      screen.position.set(9.2, y + 2.5, 0.35);
       group.add(screen);
-      for (const pz of [1.2, 4.2]) group.add(plant(1.2, y, pz));
-      group.add(plant(11, y, 2));
+      group.add(plant(1.5, y, 1.4));
+      group.add(plant(1.5, y, 4.2));
+      group.add(plant(8.6, y, 3.4));
+      group.add(plant(3.2, y, 10.4));
     }
     if (cfg.type === 'lounge') {
-      group.add(box(2.4, 0.45, 0.9, 3.2, y + 0.4, 2.4));
-      group.add(box(2.4, 0.7, 0.18, 3.2, y + 0.85, 2.0));
-      group.add(box(2.6, 0.9, 0.7, 10.2, y + 0.55, 1.6));
-      group.add(box(0.35, 0.45, 0.35, 9.2, y + 0.35, 2.5));
-      group.add(box(0.35, 0.45, 0.35, 11.2, y + 0.35, 2.5));
-      const table = box(2.2, 0.1, 1.2, 6.4, y + 0.7, 4.2);
+      group.add(box(3.2, 0.7, 1.2, 3.4, y + 0.5, 2.6));
+      group.add(box(3.2, 1.05, 0.22, 3.4, y + 1.15, 2.05));
+      group.add(box(3.4, 1.15, 0.85, 9.6, y + 0.7, 1.7));
+      group.add(box(0.5, 0.7, 0.5, 8.4, y + 0.45, 2.8));
+      group.add(box(0.5, 0.7, 0.5, 10.8, y + 0.45, 2.8));
+      group.add(box(0.5, 0.7, 0.5, 9.6, y + 0.45, 3.5));
+      const table = box(3.4, 0.14, 1.9, 3.2, y + 0.85, 8.6);
       group.add(table);
-      const net = new Mesh(new BoxGeometry(0.06, 0.35, 1.15), whiteMat);
-      net.position.set(6.4, y + 0.95, 4.2);
+      const net = new Mesh(new BoxGeometry(0.08, 0.55, 1.8), whiteMat);
+      net.position.set(3.2, y + 1.25, 8.6);
       group.add(net);
-      group.add(plant(1.3, y, 4.5));
+      group.add(plant(1.4, y, 6.2));
     }
     if (cfg.type === 'rnd') {
-      const board = new Mesh(new BoxGeometry(1.8, 1.0, 0.06), whiteMat);
-      board.position.set(2.2, y + 1.7, 0.22);
+      const board = new Mesh(new BoxGeometry(2.8, 1.6, 0.08), whiteMat);
+      board.position.set(3.2, y + 2.5, 0.32);
       group.add(board);
       if (cfg.level === 7) {
-        group.add(box(2.2, 0.8, 0.8, 11, y + 0.5, 4.6));
-        group.add(box(1.6, 0.5, 0.6, 11, y + 1.15, 4.6));
+        group.add(box(3.2, 1.05, 1.15, 10.2, y + 0.6, 3.4));
+        group.add(box(2.2, 0.7, 0.8, 10.2, y + 1.45, 3.4));
       }
     }
     if (cfg.type === 'vacant') {
       for (const [cx, cz] of [
-        [4, 3],
-        [7, 4.5],
-        [10, 2.5],
+        [3.2, 3.2],
+        [7.4, 2.2],
+        [10.5, 4.2],
+        [3.4, 8.6],
+        [4.2, 11.2],
       ] as const) {
-        const cone = new Mesh(new ConeGeometry(0.28, 0.7, 8), edgeMat);
-        cone.position.set(cx, y + 0.4, cz);
+        const cone = new Mesh(new ConeGeometry(0.42, 1.05, 8), edgeMat);
+        cone.position.set(cx, y + 0.55, cz);
         group.add(cone);
       }
-      group.add(box(0.8, 0.5, 0.8, 5.5, y + 0.3, 5));
-      group.add(box(0.7, 0.45, 0.7, 8.5, y + 0.28, 2));
+      group.add(box(1.3, 0.8, 1.3, 6.2, y + 0.45, 3.6));
+      group.add(box(1.1, 0.7, 1.1, 8.8, y + 0.4, 1.8));
+      group.add(box(1.2, 0.75, 1.0, 2.6, y + 0.42, 10.2));
     }
   }
-  const car = new Mesh(new BoxGeometry(1.05, 2.2, 1.05), fillMat);
+  const car = new Mesh(new BoxGeometry(1.15, 2.6, 1.15), fillMat);
   car.name = 'car';
-  car.position.set(W - 1.7, STOREY * 0.6, 1.2);
+  car.position.set(W - 1.8, STOREY * 0.55, 2.1);
   car.add(new LineSegments(new EdgesGeometry(car.geometry), edgeMat));
   group.add(car);
   return gong;
@@ -660,39 +748,40 @@ function box(w: number, h: number, d: number, x: number, y: number, z: number): 
   return m;
 }
 function post(x: number, y: number, z: number): Mesh {
-  return box(0.12, 1.3, 0.12, x, y, z);
+  return box(0.16, 2.0, 0.16, x, y, z);
 }
 function plant(x: number, y: number, z: number): Group {
   const g = new Group();
-  const pot = box(0.35, 0.3, 0.35, 0, 0.2, 0);
-  const leaf = box(0.55, 0.45, 0.55, 0, 0.6, 0);
-  g.add(pot, leaf);
+  const pot = box(0.5, 0.45, 0.5, 0, 0.25, 0);
+  const leaf = box(0.85, 0.7, 0.85, 0, 0.85, 0);
+  const top = box(0.5, 0.45, 0.5, 0, 1.35, 0);
+  g.add(pot, leaf, top);
   g.position.set(x, y, z);
   return g;
 }
 
 function spawnPeople(floors: readonly FloorConfig[], desks: Desk[]): Person[] {
   const out: Person[] = [];
-  const legG = new BoxGeometry(0.16, 0.7, 0.16);
-  const bodyG = new BoxGeometry(0.46, 0.55, 0.28);
-  const headG = new BoxGeometry(0.36, 0.36, 0.36);
-  const armG = new BoxGeometry(0.12, 0.5, 0.12);
+  const legG = new BoxGeometry(0.28, 1.2, 0.28);
+  const bodyG = new BoxGeometry(0.78, 0.95, 0.46);
+  const headG = new BoxGeometry(0.58, 0.58, 0.58);
+  const armG = new BoxGeometry(0.18, 0.78, 0.18);
   let seed = 7;
   const add = (floor: number, x: number, z: number, home: Kind, role: number) => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
     const group = new Group();
     const leg = new Mesh(legG, deepMat);
-    leg.position.set(-0.12, 0.35, 0);
+    leg.position.set(-0.18, 0.6, 0);
     const leg2 = new Mesh(legG, deepMat);
-    leg2.position.set(0.12, 0.35, 0);
+    leg2.position.set(0.18, 0.6, 0);
     const body = new Mesh(bodyG, iceMat);
-    body.position.y = 0.95;
+    body.position.y = 1.65;
     const head = new Mesh(headG, whiteMat);
-    head.position.y = 1.42;
+    head.position.y = 2.45;
     const arm = new Group();
-    arm.position.set(0.3, 1.15, 0);
+    arm.position.set(0.48, 1.9, 0);
     const armMesh = new Mesh(armG, fillMat);
-    armMesh.position.y = -0.22;
+    armMesh.position.y = -0.32;
     arm.add(armMesh);
     group.add(leg, leg2, body, head, arm);
     const baseY = (floor - 1) * STOREY + SLAB;
@@ -717,15 +806,15 @@ function spawnPeople(floors: readonly FloorConfig[], desks: Desk[]): Person[] {
   };
   for (const cfg of floors) {
     if (cfg.type === 'lobby') {
-      add(cfg.level, 4.2, 3.2, 'sit', 0);
-      for (let i = 0; i < cfg.people; i++) add(cfg.level, 3 + i * 1.3, 5.2, 'walk', 2);
+      add(cfg.level, 4.6, 3.4, 'sit', 0);
+      for (let i = 0; i < cfg.people; i++) add(cfg.level, 2.2 + (i % 3) * 1.1, 8.2 + Math.floor(i / 3) * 1.6, 'walk', 2);
     } else if (cfg.type === 'lounge') {
-      add(cfg.level, 5.4, 4.6, 'swing', 3);
-      add(cfg.level, 7.4, 4.6, 'swing', 3);
-      add(cfg.level, 2.6, 3.2, 'chat', 3);
-      add(cfg.level, 4.0, 3.2, 'chat', 3);
-      add(cfg.level, 9.4, 2.6, 'chat', 3);
-      add(cfg.level, 11.0, 2.6, 'chat', 3);
+      add(cfg.level, 2.4, 9.4, 'swing', 3);
+      add(cfg.level, 4.2, 9.4, 'swing', 3);
+      add(cfg.level, 2.4, 3.6, 'chat', 3);
+      add(cfg.level, 4.4, 3.6, 'chat', 3);
+      add(cfg.level, 8.6, 3.2, 'chat', 3);
+      add(cfg.level, 10.6, 3.2, 'chat', 3);
     } else if (cfg.type === 'vacant') {
       continue;
     } else {
@@ -734,14 +823,15 @@ function spawnPeople(floors: readonly FloorConfig[], desks: Desk[]): Person[] {
       for (let i = 0; i < n; i++) {
         const d = mine[i];
         if (!d) continue;
-        add(cfg.level, d.x, d.z + 0.55, cfg.type === 'sales' ? 'phone' : 'sit', cfg.type === 'sales' ? 4 : 0);
+        add(cfg.level, d.x, d.z + 0.95, cfg.type === 'sales' ? 'phone' : 'sit', cfg.type === 'sales' ? 4 : 0);
       }
-      for (let i = 0; i < cfg.people; i++) add(cfg.level, 2.4 + i * 1.6, 4.4, 'walk', 1);
+      for (let i = 0; i < cfg.people; i++) add(cfg.level, 2.2 + i * 1.4, 7.6, 'walk', 1);
     }
   }
   for (const p of out) {
     if (p.home === 'walk') {
-      p.tx = p.x > 6 ? 2.2 : 8.2;
+      p.tx = p.x > 4 ? 2.2 : 4.2;
+      p.tz = p.z > BACK ? 8.2 : 3.2;
       p.moving = 1;
     }
   }
@@ -749,37 +839,23 @@ function spawnPeople(floors: readonly FloorConfig[], desks: Desk[]): Person[] {
 }
 
 function makeSign(): Mesh {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
-  const g = canvas.getContext('2d');
-  if (!g) return new Mesh();
-  g.fillStyle = '#071018';
-  g.fillRect(0, 0, 512, 128);
-  g.strokeStyle = '#7FDBFF';
-  g.lineWidth = 10;
-  g.strokeRect(8, 8, 496, 112);
-  paintText(g, 'PATSNAP', 28, 36, 10, '#ffffff');
-  const tex = new CanvasTexture(canvas);
-  tex.magFilter = NearestFilter;
-  tex.minFilter = NearestFilter;
-  tex.colorSpace = SRGBColorSpace;
-  const mesh = new Mesh(new PlaneGeometry(4.8, 1.2), new MeshBasicMaterial({ map: tex }));
+  const mesh = new Mesh(new BoxGeometry(5.4, 2.05, 0.22), fillMat);
+  mesh.add(new LineSegments(new EdgesGeometry(mesh.geometry), edgeMat));
   return mesh;
 }
 
 function makePulses(paths: Path[]): { meshes: Mesh[]; cursor: Float32Array } {
   const meshes: Mesh[] = [];
-  const geo = new BoxGeometry(0.18, 0.18, 0.18);
-  const mats = [whiteMat, brightMat, edgeMat, deepMat];
+  const geo = new BoxGeometry(0.36, 0.36, 0.36);
+  const mats = [whiteMat, brightMat, whiteMat, edgeMat, brightMat, deepMat];
   const count = Math.max(1, paths.length);
-  const cursor = new Float32Array(count * 4);
+  const cursor = new Float32Array(count);
   for (let i = 0; i < count; i++) {
-    for (let k = 0; k < 4; k++) {
+    for (let k = 0; k < 6; k++) {
       const m = new Mesh(geo, mats[k] ?? edgeMat);
       meshes.push(m);
     }
-    cursor[i] = (i * 0.17) % 1;
+    cursor[i] = (i * 0.13) % 1;
   }
   return { meshes, cursor };
 }
@@ -788,12 +864,12 @@ function stepPulses(pulses: { meshes: Mesh[]; cursor: Float32Array }, paths: Pat
   for (let i = 0; i < paths.length; i++) {
     const path = paths[i];
     if (!path) continue;
-    let c = (pulses.cursor[i] ?? 0) + dt * 0.18;
+    let c = (pulses.cursor[i] ?? 0) + dt * 0.22;
     if (c > 1) c -= 1;
     pulses.cursor[i] = c;
-    for (let k = 0; k < 4; k++) {
-      const mesh = pulses.meshes[i * 4 + k];
-      const at = samplePath(path, c - k * 0.03);
+    for (let k = 0; k < 6; k++) {
+      const mesh = pulses.meshes[i * 6 + k];
+      const at = samplePath(path, c - k * 0.025);
       if (mesh) mesh.position.set(at[0] * SX, at[1] * SY, at[2] * SZ);
     }
   }

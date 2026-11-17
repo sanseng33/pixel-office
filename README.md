@@ -129,6 +129,6 @@ google-chrome \
 
 ## 技术说明
 
-Vite + TypeScript + three.js。正交相机方位角 45°，俯角接近真等距（约 35°，视线的竖直分量略高一点）。楼板、后墙和柱子是盒子，棱线用 `EdgesGeometry`。像素感来自官方的 `RenderPixelatedPass`（`webgl_postprocessing_pixel`），不是手写的 2D 投影。旧的 2D 绘制还留在 `src/render/` 里，默认入口不再使用它。没有使用第三方像素素材。
+Vite + TypeScript + three.js。平面接近正方形（14×14）。正交相机方位角 45°，俯角大约 40°。每层楼板是 L 形，近角切掉，上一层再往后退一点，所以能看见室内。棱线用 `EdgesGeometry`。像素感来自官方的 `RenderPixelatedPass`。楼层名和屋顶的 PatSnap 画在一张不经过像素化的叠层上，所以字是清楚的。旧的 2D 绘制还留在 `src/render/` 里，默认入口不再使用它。没有使用第三方像素素材。
 
-七层都要露出室内时，楼会比它的进深更高，所以正方形左右仍有边。再把楼拉宽，上一层楼板就会挡住室内，这一版没有那样做。
+七层叠在正方形平面上，画面主要被高度占满，左右仍有边。
