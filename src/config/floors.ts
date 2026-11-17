@@ -169,8 +169,8 @@ export const floors: readonly FloorConfig[] = [
     label: '1F',
     name: 'LOBBY',
     title: '入口与公共展厅',
-    stations: 0,
-    occupancy: 0,
+    stations: 1,
+    occupancy: 1,
     people: 3,
   }),
   floor({

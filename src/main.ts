@@ -26,12 +26,15 @@ if (!appRoot) throw new Error('missing #app');
 const renderer = params.get('renderer');
 const debug = params.get('debug') === '1';
 
+const floorParam = params.get('floor');
+const focus = floorParam ? Number(floorParam) : 0;
+
 const office: PlateView =
   renderer === '3d'
     ? await (await import('./render/office3d.ts')).createOffice(floors)
     : renderer === 'plate'
       ? createPlate(floors, { debug })
-      : await (await import('./render/tile/engine.ts')).createTileFloor(floors, { debug });
+      : await (await import('./render/tile/engine.ts')).createTileFloor(floors, { debug, focus });
 
 function suzhouHour(now = Date.now()): number {
   if (forcedHour >= 0 && forcedHour <= 23) return forcedHour;
