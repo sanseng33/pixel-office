@@ -42,19 +42,29 @@ const FRONT_Y: Record<number, number> = {
   7: 326,
 };
 
-function plateOf(front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'> {
+/** 楼板前缘在 x=300 处的 y。工位行和电流都相对这条亮边摆。 */
+const LIP_Y: Record<number, number> = {
+  1: 919,
+  2: 812,
+  3: 712,
+  4: 610,
+  5: 507,
+  6: 404,
+  7: 302,
+};
+
+function plateOf(level: number, front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'> {
   const yf = front;
-  const ym = front - 42;
+  const ym = front - 24;
   const yb = front - 86;
-  const near = front + 70;
-  const recess = front + 4;
-  const lip: readonly Vec2[] = [
-    { x: 172, y: near - 12 },
-    { x: 310, y: near },
-    { x: 336, y: recess + 14 },
-    { x: 520, y: recess - 6 },
-    { x: 700, y: recess + 6 },
-    { x: 848, y: recess - 14 },
+  const lip = LIP_Y[level] ?? front - 26;
+  // 顺着楼板自己的折线：左臂前缘、凹口、右臂前缘、右侧收边。
+  const edge: readonly Vec2[] = [
+    { x: 210, y: lip - 34 },
+    { x: 400, y: lip + 33 },
+    { x: 545, y: lip - 24 },
+    { x: 645, y: lip + 14 },
+    { x: 830, y: lip - 52 },
   ];
   return {
     polygon: [
@@ -65,11 +75,11 @@ function plateOf(front: number): Pick<FloorConfig, 'polygon' | 'origin' | 'axisU
       { x: 820, y: yb },
       { x: 246, y: yb },
     ],
-    origin: { x: 252, y: yb + 8 },
-    axisU: { x: 42, y: 5 },
-    axisV: { x: 6, y: 22 },
+    origin: { x: 258, y: lip - 26 },
+    axisU: { x: 32, y: 11 },
+    axisV: { x: 12, y: -14 },
     labelAt: { x: 108, y: yf - 28 },
-    edges: [lip],
+    edges: [edge],
   };
 }
 
@@ -77,7 +87,7 @@ function floor(
   partial: Omit<FloorConfig, 'polygon' | 'origin' | 'axisU' | 'axisV' | 'labelAt' | 'edges'>,
 ): FloorConfig {
   const front = FRONT_Y[partial.level] ?? 900;
-  return { ...partial, ...plateOf(front) };
+  return { ...partial, ...plateOf(partial.level, front) };
 }
 
 export const floors: readonly FloorConfig[] = [
