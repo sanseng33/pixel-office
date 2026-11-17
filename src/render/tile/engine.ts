@@ -159,15 +159,19 @@ export async function createTileFloor(
   const shownList = (building ? [...configs] : configs.filter((f) => f.level === focus)).slice();
   const shown = shownList[0];
   if (!shown) throw new Error('no floor config');
-  tileW = 16;
-  tileH = building ? 5 : 11;
-  zH = building ? 6 : 14;
-  floorZ = building ? 0.75 : 1.7;
-  wallZ = building ? 1.6 : 4.6;
-  SPR = building ? 0.62 : 1;
+  tileW = building ? 15 : 16;
+  tileH = building ? 4 : 11;
+  zH = building ? 8 : 14;
+  floorZ = building ? 1 : 1.7;
+  wallZ = building ? 2.6 : 4.6;
+  SPR = building ? 0.72 : 1;
   let layout = layoutFor(shown.type, shown.level);
   let people: Person[] = [];
   const debug = options?.debug === true;
+  let roofGap = 0;
+  const bandMin = building ? 4 : 0;
+  const bandMax = building ? 18 : 99;
+  const inBand = (x: number, y: number) => x + y >= bandMin && x + y <= bandMax;
 
   const app = new Application();
   await app.init({
@@ -241,6 +245,8 @@ export async function createTileFloor(
     originY: number;
     outline: Run;
     columns: Run[];
+    labelX: number;
+    labelY: number;
   }
 
   function makePeople(cfg: FloorConfig, lay: FloorLayout): Person[] {
@@ -317,27 +323,56 @@ export async function createTileFloor(
       originY,
       outline: buildOutline(lay.solid, iso),
       columns: columnRuns(iso),
+      labelX: 8,
+      labelY: 8,
     });
   } else {
-    const span = box.maxY - box.minY;
-    const step = 64;
-    const total = step * (shownList.length - 1) + span + 28;
-    const top = Math.round((VIEW - total) / 2);
-    const ox = Math.round(VIEW / 2 - (box.minX + box.maxX) / 2);
+    originX = 0;
+    originY = 0;
+    layout = layoutFor('lobby', 1);
+    let plateTop = 1e9;
+    let plateBottom = -1e9;
+    let plateLeft = 1e9;
+    let plateRight = -1e9;
+    for (let y = 0; y < PLAN; y++) {
+      for (let x = 0; x < PLAN; x++) {
+        if (!layout.solid(x, y) || !inBand(x, y)) continue;
+        const front = iso(x + 1, y + 1, 0);
+        const back = iso(x, y, floorZ);
+        const left = iso(x, y + 1, 0);
+        const right = iso(x + 1, y, 0);
+        if (back.y < plateTop) plateTop = back.y;
+        if (front.y > plateBottom) plateBottom = front.y;
+        if (left.x < plateLeft) plateLeft = left.x;
+        if (right.x > plateRight) plateRight = right.x;
+      }
+    }
+    const step = Math.ceil(plateBottom - plateTop) - 2;
+    const wallOver = Math.ceil((wallZ - floorZ) * zH) + 2;
+    roofGap = 14;
+    const floorsN = shownList.length;
+    const totalH = step * (floorsN - 1) + (plateBottom - plateTop) + roofGap + wallOver;
+    const top = Math.max(8, Math.round((VIEW - totalH) / 2));
+    let originX0 = Math.round(56 - plateLeft);
+    if (originX0 + plateRight > VIEW - 8) originX0 = Math.round(VIEW - 8 - plateRight);
     shownList.forEach((cfg, index) => {
-      const fromTop = shownList.length - 1 - index;
-      originX = ox;
-      originY = Math.round(top + fromTop * step - box.minY);
+      const fromTop = floorsN - 1 - index;
+      originX = originX0;
+      originY = Math.round(top + roofGap + wallOver + fromTop * step - plateTop);
       const lay = layoutFor(cfg.type, cfg.level);
       layout = lay;
+      const lip = iso(0, 9, floorZ);
+      const label = `${cfg.label} ${cfg.name}`;
       sims.push({
         cfg,
         layout: lay,
         people: makePeople(cfg, lay),
         originX,
         originY,
-        outline: buildOutline(lay.solid, iso),
+        outline: buildOutline((x, y) => lay.solid(x, y) && inBand(x, y), iso),
         columns: columnRuns(iso),
+        labelX: Math.max(2, Math.round(lip.x) - label.length * 6 - 4),
+        labelY: Math.round(lip.y) - 4,
       });
     });
   }
@@ -637,12 +672,24 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       return;
     }
     if (item.kind === 'rack') {
-      const [a, b, c, d] = corners(item.x + 0.2, item.y + 0.2, item.x + 0.8, item.y + 0.8, floorZ);
-      volume(g, a, b, c, d, 0, u(16));
-      const top = raise(iso(item.x + 0.5, item.y + 0.5, floorZ), u(14));
-      for (let i = 0; i < 4; i++) {
-        const on = Math.floor(now / 180 + item.x * 3 + i) % 3 !== 0;
-        g.rect(Math.round(top.x) - u(2), Math.round(top.y) + i * u(3), u(2), u(1)).fill({ color: on ? WHITE : ICE });
+      const base = iso(item.x + 0.55, item.y + 0.55, floorZ);
+      const x = Math.round(base.x);
+      const y = Math.round(base.y);
+      const h = u(22);
+      const w = u(8);
+      g.rect(x + w - u(3), y - h + u(2), u(3), h - u(2)).fill({ color: 0x050c14 });
+      g.rect(x + w - u(3), y - h + u(2), u(1), h - u(2)).fill({ color: ICE });
+      g.rect(x - u(3), y - h, w, h).fill({ color: INK });
+      g.rect(x - u(3), y - h, w, u(1)).fill({ color: WHITE });
+      g.rect(x - u(3), y - u(1), w, u(1)).fill({ color: ICE });
+      g.rect(x - u(3), y - h, u(1), h).fill({ color: ICE });
+      g.rect(x - u(3) + w - u(1), y - h, u(1), h).fill({ color: ICE });
+      for (let i = 0; i < 5; i++) {
+        const by = y - h + u(2) + i * u(4);
+        g.rect(x - u(2), by, w - u(2), u(1)).fill({ color: 0x163044 });
+        const blink = Math.floor(now / 170 + item.x * 2 + i) % 2 === 0;
+        g.rect(x - u(1), by + u(1), u(1), u(1)).fill({ color: blink ? WHITE : ICE });
+        g.rect(x + u(2), by + u(1), u(1), u(1)).fill({ color: blink ? ICE : WHITE });
       }
       return;
     }
@@ -713,24 +760,29 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
   function paintRoof(now: number): void {
     const top = sims[sims.length - 1];
     const low = sims[0];
-    if (top) {
-      originX = top.originX;
-      originY = top.originY;
-      const sign = iso(5, 1, wallZ);
-      paintText(world, 'PATSNAP', Math.round(sign.x) - 16, Math.round(sign.y) - u(14), WHITE, 2);
+    if (!top || !low) return;
+    originX = top.originX;
+    originY = top.originY - roofGap;
+    for (let y = 0; y < PLAN; y++) {
+      for (let x = 0; x < PLAN; x++) {
+        if (!top.layout.solid(x, y) || x + y > 5) continue;
+        poly(world, face(x, y, x + 1, y), 0x071018, 1, ICE, 0.85);
+        poly(world, face(x + 1, y, x + 1, y + 1), 0x071018, 1, ICE, 0.7);
+        poly(world, tilePts(x, y, floorZ), 0x102033, 1, ICE, 0.9);
+      }
     }
-    if (low && top) {
-      originX = low.originX;
-      originY = low.originY;
-      const a = iso(0, 0, 0);
-      const c = iso(PLAN, 0, 0);
-      originX = top.originX;
-      originY = top.originY;
-      const b = iso(0, 0, wallZ);
-      const d = iso(PLAN, 0, wallZ);
-      drawPulses(glow, measure([a, b]), now, 36, 3);
-      drawPulses(glow, measure([c, d]), now + 400, 36, 2);
-    }
+    const sign = raise(iso(3.2, 1.6, floorZ), u(10));
+    paintText(world, 'PATSNAP', Math.round(sign.x) - 21, Math.round(sign.y) - 8, WHITE, 2);
+    originX = low.originX;
+    originY = low.originY;
+    const a = iso(0, 0, 0);
+    const c = iso(PLAN, 0, 0);
+    originX = top.originX;
+    originY = top.originY - roofGap;
+    const b = iso(0, 0, floorZ + 1);
+    const d = iso(PLAN, 0, floorZ + 1);
+    drawPulses(glow, measure([a, b]), now, 32, 3);
+    drawPulses(glow, measure([c, d]), now + 500, 32, 2);
   }
 
   function paintFloor(now: number, sim: Sim): void {
@@ -738,18 +790,25 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
     glowSpots.length = 0;
     for (let y = 0; y < PLAN; y++) {
       for (let x = 0; x < PLAN; x++) {
-        if (!layout.solid(x, y)) continue;
+        if (!layout.solid(x, y) || !inBand(x, y)) continue;
         const gx = x;
         const gy = y;
         pushDraw(gx, gy, 0, (g) => {
-          if (!layout.solid(x, y - 1)) poly(g, face(x, y, x + 1, y), 0x0c243c, 0.9, DIM, 0.35);
-          if (!layout.solid(x + 1, y)) poly(g, face(x + 1, y, x + 1, y + 1), 0x0c243c, 0.9, DIM, 0.3);
-          if (!layout.solid(x, y + 1)) poly(g, face(x, y + 1, x + 1, y + 1), 0x0e2844, 0.92, DIM, 0.4);
-          if (!layout.solid(x - 1, y)) poly(g, face(x, y, x, y + 1), 0x0c243c, 0.9, DIM, 0.3);
+          const sideA = building ? 1 : 0.9;
+          const sideC = building ? 0x071018 : 0x0c243c;
+          const cut = (nx: number, ny: number) => !layout.solid(nx, ny) || (building && !inBand(nx, ny));
+          if (cut(x, y - 1)) poly(g, face(x, y, x + 1, y), sideC, sideA, ICE, building ? 0.85 : 0.35);
+          if (cut(x + 1, y)) poly(g, face(x + 1, y, x + 1, y + 1), sideC, sideA, ICE, building ? 0.7 : 0.3);
+          if (cut(x, y + 1)) poly(g, face(x, y + 1, x + 1, y + 1), building ? 0x0a1828 : 0x0e2844, sideA, ICE, building ? 0.9 : 0.4);
+          if (cut(x - 1, y)) poly(g, face(x, y, x, y + 1), sideC, sideA, ICE, building ? 0.7 : 0.3);
         });
         pushDraw(gx, gy, 2, (g) => {
           const mark = (x + y) % 2 === 0;
-          poly(g, tilePts(x, y, floorZ), 0x0a1c33, 0.42, mark ? DIM : undefined, 0.28);
+          if (building) {
+            poly(g, tilePts(x, y, floorZ), 0x0c1828, 1, mark ? 0x163044 : undefined, 0.45);
+          } else {
+            poly(g, tilePts(x, y, floorZ), 0x0a1c33, 0.42, mark ? DIM : undefined, 0.28);
+          }
         });
         if (y === 0) {
           pushDraw(gx, gy, 3, (g) => {
@@ -757,7 +816,11 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
             const b = iso(x + 1, y, floorZ);
             const c = iso(x + 1, y, wallZ);
             const d = iso(x, y, wallZ);
-            poly(g, [a, b, c, d], 0x09182c, 0.92, ICE, 0.45);
+            poly(g, [a, b, c, d], 0x081018, building ? 1 : 0.92, ICE, building ? 0.75 : 0.45);
+            if (building) {
+              const mullion = iso(x + 0.5, y, (floorZ + wallZ) / 2);
+              g.rect(Math.round(mullion.x), Math.round(mullion.y) - u(2), u(1), u(6)).fill({ color: ICE });
+            }
           });
         }
         if (x === 0) {
@@ -766,12 +829,17 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
             const b = iso(x, y + 1, floorZ);
             const c = iso(x, y + 1, wallZ);
             const d = iso(x, y, wallZ);
-            poly(g, [a, b, c, d], 0x081624, 0.92, ICE, 0.4);
+            poly(g, [a, b, c, d], 0x060e16, building ? 1 : 0.92, ICE, building ? 0.65 : 0.4);
+            if (building) {
+              const mullion = iso(x, y + 0.5, (floorZ + wallZ) / 2);
+              g.rect(Math.round(mullion.x), Math.round(mullion.y) - u(2), u(1), u(6)).fill({ color: ICE });
+            }
           });
         }
       }
     }
     for (const item of layout.furniture) {
+      if (building && !inBand(item.x, item.y)) continue;
       const frontX = item.x + item.w - 1;
       if (item.kind === 'desk') {
         const face = item.face ?? 1;
@@ -789,6 +857,7 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       pushDraw(frontX, item.y, 6, (g) => drawFurn(g, item, now));
     }
     for (const person of people) {
+      if (building && !inBand(Math.round(person.x), Math.round(person.y))) continue;
       const atDesk = person.pose === 'sit';
       const alongSeat = person.face === 1 ? 0.72 : 0.28;
       const gx = atDesk ? person.homeX + person.span - 1 : Math.round(person.x);
@@ -821,8 +890,7 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       paintText(world, `PATSNAP . ${sim.cfg.label} ${sim.cfg.name}`, 8, headerY, WHITE, 3);
       paintText(world, `SEAT ${seated}/${Math.max(layout.desks.length, seated)}  ON ${people.length}`, 8, headerY + 18, ICE, 2);
     } else {
-      const lip = iso(0.4, 8.2, floorZ);
-      paintText(world, `${sim.cfg.label} ${sim.cfg.name}`, Math.round(lip.x) + 4, Math.round(lip.y) - u(6), ICE, 1);
+      paintText(world, `${sim.cfg.label} ${sim.cfg.name}`, sim.labelX, sim.labelY, ICE, 1);
     }
 
     for (const spot of glowSpots) {
