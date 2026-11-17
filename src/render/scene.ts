@@ -1,20 +1,19 @@
 import { RGB, VIEW } from '../config/display.ts';
 import type { FloorConfig, FloorType } from '../config/floors.ts';
 import type { OfficeEvent, OfficeEventType } from '../events/source.ts';
-import { stampText, textWidth } from './font.ts';
-import { DEPTH, FLOOR_W, FLOOR_X, FRONT_1, PITCH, SLAB, STAIR_X, frontY, fx, fy } from './iso.ts';
+import { stampText } from './font.ts';
+import { HH, HW, MIN_SUM, PITCH, SLAB, TD, TW, inRoom, inView, sx, sy } from './iso.ts';
 import type { RGBA } from './pixel.ts';
 import { Pix } from './pixel.ts';
-import { RACK_LEDS, SCREEN_OF, buildAtlas, type Atlas, type Frame } from './sprites.ts';
+import { SCREEN_OF, buildAtlas, type Atlas, type Frame } from './sprites.ts';
 
 type State = 'sit' | 'phone' | 'walk' | 'chat' | 'swing' | 'cheer' | 'idle';
 
 interface Actor {
   level: number;
-  u: number;
-  v: number;
+  tx: number;
+  ty: number;
   sprite: string;
-  lift: number;
   kind: number;
   state: State;
   home: State;
@@ -22,15 +21,16 @@ interface Actor {
   frame: number;
   acc: number;
   timer: number;
-  u0: number;
-  u1: number;
+  nx: number;
+  ny: number;
   moving: number;
   role: number;
-  homeU: number;
-  homeV: number;
+  homeX: number;
+  homeY: number;
   hidden: number;
   bubble: number;
   seed: number;
+  lift: number;
 }
 
 interface Pulse {
@@ -53,7 +53,6 @@ interface Bit {
   life: number;
   max: number;
 }
-
 interface Banner {
   frame: string;
   x: number;
@@ -64,45 +63,48 @@ interface Banner {
 }
 
 const CODE = [0b101101, 0b011011, 0b110010, 0b001111, 0b101010, 0b111000];
-const MOTE = ['rgba(127,219,255,0.4)', 'rgba(191,244,255,0.55)', 'rgba(127,219,255,0.7)'];
-const WALL_H = PITCH - DEPTH - 4;
+const MOTE = ['rgba(127,219,255,0.45)', 'rgba(191,244,255,0.6)', 'rgba(127,219,255,0.75)'];
 
 function nextSeed(seed: number): number {
   return (Math.imul(seed, 1664525) + 1013904223) >>> 0;
 }
 
-function jagPoints(x0: number, y0: number, x1: number, y1: number, step = 4): number[] {
-  const pts: number[] = [];
-  const len = Math.hypot(x1 - x0, y1 - y0);
-  const n = Math.max(1, Math.round(len / step));
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const inv = len || 1;
-  const px = -dy / inv;
-  const py = dx / inv;
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const j = ((i * 13 + Math.round(x0 + y0)) % 3) - 1;
-    pts.push(x0 + dx * t + px * j, y0 + dy * t + py * j);
-  }
-  return pts;
-}
-
-function drawJag(pix: Pix, pts: number[], color: RGBA): void {
-  for (let i = 2; i < pts.length; i += 2) {
-    pix.line(pts[i - 2] ?? 0, pts[i - 1] ?? 0, pts[i] ?? 0, pts[i + 1] ?? 0, color);
+function fillTile(pix: Pix, x: number, y: number, level: number, color: RGBA): void {
+  const px = sx(x, y);
+  const py = sy(x, y, level);
+  for (let row = 0; row <= HH * 2; row++) {
+    const dist = row <= HH ? row : HH * 2 - row;
+    const half = (dist / HH) * HW;
+    const yy = Math.round(py + row);
+    pix.hline(yy, Math.round(px - half), Math.round(px + half), color);
   }
 }
 
-function toPulse(flat: number[], speed: number, phase: number): Pulse {
-  const n = flat.length >> 1;
+function dropEdge(pix: Pix, x0: number, y0: number, x1: number, y1: number): void {
+  const steps = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0)));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = x0 + (x1 - x0) * t;
+    const y = y0 + (y1 - y0) * t;
+    pix.line(x, y, x, y + SLAB, RGB.side);
+  }
+  pix.line(x0, y0, x1, y1, RGB.bright);
+  pix.line(x0, y0 + SLAB, x1, y1 + SLAB, RGB.ice);
+}
+
+function edgeDown(pix: Pix, ax: number, ay: number, bx: number, by: number): void {
+  dropEdge(pix, ax, ay, bx, by);
+}
+
+function toPulse(pts: number[], speed: number, phase: number): Pulse {
+  const n = pts.length >> 1;
   const xs = new Float32Array(n);
   const ys = new Float32Array(n);
   const dist = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    xs[i] = flat[i * 2] ?? 0;
-    ys[i] = flat[i * 2 + 1] ?? 0;
-    if (i > 0) dist[i] = (dist[i - 1] ?? 0) + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
+    xs[i] = pts[i * 2] ?? 0;
+    ys[i] = pts[i * 2 + 1] ?? 0;
+    if (i) dist[i] = (dist[i - 1] ?? 0) + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
   }
   const total = dist[n - 1] || 1;
   return { xs, ys, dist, len: n, total, head: total * phase, speed, x: 0, y: 0 };
@@ -120,54 +122,29 @@ function sample(p: Pulse, d0: number): void {
   p.y = (p.ys[i0] ?? 0) + ((p.ys[i] ?? 0) - (p.ys[i0] ?? 0)) * t;
 }
 
-function makeActor(level: number, u: number, v: number, sprite: string, lift = 0): Actor {
-  return {
-    level,
-    u,
-    v,
-    sprite,
-    lift,
-    kind: 0,
-    state: 'idle',
-    home: 'idle',
-    dir: 1,
-    frame: 0,
-    acc: 0,
-    timer: 0,
-    u0: u,
-    u1: u,
-    moving: 0,
-    role: 0,
-    homeU: u,
-    homeV: v,
-    hidden: 0,
-    bubble: 0,
-    seed: 1,
-  };
+function personSprite(a: Actor): string {
+  const flip = a.dir < 0 ? 'F' : '';
+  if (a.state === 'cheer') return 'cheer';
+  if (a.state === 'walk') return `w${a.frame % 3}${flip}`;
+  if (a.state === 'phone') return `p${a.frame % 2}${flip}`;
+  if (a.state === 'chat') return `c${a.frame % 2}${flip}`;
+  if (a.state === 'swing') return `g${a.frame % 2}${flip}`;
+  if (a.state === 'idle') return `w0${flip}`;
+  return `s${a.frame % 2}${flip}`;
 }
 
-function asPerson(
-  level: number,
-  u: number,
-  v: number,
-  home: State,
-  dir: number,
-  role: number,
-  seed: number,
-): Actor {
-  const actor = makeActor(level, u, v, '');
-  actor.kind = 1;
-  actor.state = home;
-  actor.home = home;
-  actor.dir = dir;
-  actor.role = role;
-  actor.homeU = u;
-  actor.homeV = v;
-  actor.seed = seed;
-  actor.timer = 600 + (seed % 1500);
-  actor.frame = seed & 1;
-  actor.bubble = home === 'phone' || home === 'chat' ? 1 : 0;
-  return actor;
+function blit(ctx: CanvasRenderingContext2D, atlas: Atlas, frame: Frame, footX: number, footY: number): void {
+  ctx.drawImage(
+    atlas.canvas,
+    frame.x,
+    frame.y,
+    frame.w,
+    frame.h,
+    (footX - frame.ax) | 0,
+    (footY - frame.ay) | 0,
+    frame.w,
+    frame.h,
+  );
 }
 
 export interface Scene {
@@ -181,47 +158,28 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
   const floors = [...configs].sort((a, b) => a.level - b.level);
   const atlas = buildAtlas();
   const pulses: Pulse[] = [];
-  const shell = new Pix(VIEW, VIEW);
-  shell.rect(0, 0, VIEW, VIEW, RGB.bg);
-  for (let i = 18; i < VIEW; i += 18) {
-    const major = i % 72 === 0;
-    const c = major ? ([127, 219, 255, 34] as const) : ([127, 219, 255, 14] as const);
-    shell.hline(i, 0, VIEW - 1, c);
-    for (let y = 0; y < VIEW; y += 2) shell.px(i, y, c);
-  }
+  const bg = bakeBg();
+  const roofs = bakeRoof(pulses);
+  const shells = new Map<number, HTMLCanvasElement>();
+  for (const cfg of floors) shells.set(cfg.level, bakeFloor(cfg, pulses));
 
   const actors: Actor[] = [];
-  const floorOf: Actor[][] = [];
-  for (let i = 0; i < 8; i++) floorOf.push([]);
-
-  const add = (actor: Actor) => {
-    actors.push(actor);
-    floorOf[actor.level]?.push(actor);
+  const byLevel: Actor[][] = [];
+  for (let i = 0; i < 8; i++) byLevel.push([]);
+  const add = (a: Actor) => {
+    actors.push(a);
+    byLevel[a.level]?.push(a);
   };
+  for (const cfg of floors) layout(cfg, add);
+  const order = byLevel.map((list) => Int16Array.from(list.map((_, i) => i)));
 
-  let seed = 11;
-  const rnd = () => {
-    seed = nextSeed(seed);
-    return seed / 4294967296;
-  };
-
-  for (const cfg of floors) {
-    bakeShell(shell, cfg, pulses);
-    layout(cfg, add, rnd);
-  }
-  bakeRoof(shell, atlas, pulses);
-  bakeFrame(shell);
-
-  const staticCanvas = shell.toCanvas();
-  const order: Int16Array[] = floorOf.map((list) => Int16Array.from(list.map((_, i) => i)));
-
-  const motes = Array.from({ length: 14 }, (_, i) => ({
-    x: i < 7 ? 6 + (i % 3) * 8 : VIEW - 14 - (i % 3) * 8,
-    y: 12 + ((i * 67) % (VIEW - 24)),
-    speed: 8 + (i % 4) * 3,
+  const motes = Array.from({ length: 18 }, (_, i) => ({
+    x: 8 + ((i * 97) % (VIEW - 16)),
+    y: 10 + ((i * 53) % (VIEW - 20)),
+    speed: 6 + (i % 5) * 3,
     style: i % MOTE.length,
   }));
-  const bits: Bit[] = Array.from({ length: 16 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1 }));
+  const bits: Bit[] = Array.from({ length: 14 }, () => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1 }));
   const banners: Banner[] = Array.from({ length: 3 }, () => ({
     frame: 'tDEAL',
     x: 0,
@@ -232,14 +190,12 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
   }));
   const hotUntil = new Float64Array(8);
   let doorUntil = 0;
-  let carT = 0;
+  let carT = 0.2;
   let carDir = 1;
-
   const queue: { type: OfficeEventType; level: number; ttl: number }[] = [];
   for (let i = 0; i < 8; i++) queue.push({ type: 'dealClosed', level: 0, ttl: 0 });
   let qh = 0;
   let qt = 0;
-
   const levelsOf = (type: FloorType) => floors.filter((f) => f.type === type).map((f) => f.level);
 
   function burst(x: number, y: number): void {
@@ -249,23 +205,16 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
       const ang = (n / 10) * Math.PI * 2;
       bit.x = x;
       bit.y = y;
-      bit.vx = Math.cos(ang) * 22;
-      bit.vy = Math.sin(ang) * 16 - 8;
-      bit.life = 700;
-      bit.max = 700;
+      bit.vx = Math.cos(ang) * 24;
+      bit.vy = Math.sin(ang) * 16 - 6;
+      bit.life = 720;
+      bit.max = 720;
       n += 1;
       if (n >= 10) break;
     }
   }
-
-  function banner(frame: string, x: number, y: number, now: number, ttl: number): void {
-    let slot = banners[0];
-    for (const item of banners) {
-      if (!item.on) {
-        slot = item;
-        break;
-      }
-    }
+  function showBanner(frame: string, x: number, y: number, now: number, ttl: number): void {
+    const slot = banners.find((b) => !b.on) ?? banners[0];
     if (!slot) return;
     slot.frame = frame;
     slot.x = x;
@@ -274,35 +223,31 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
     slot.until = now + ttl;
     slot.on = 1;
   }
-
   function apply(type: OfficeEventType, level: number, ttl: number, now: number): void {
     if (type !== 'visitorArrived') hotUntil[level] = now + ttl;
-    const list = floorOf[level] ?? [];
-    const cx = fx(0.55, 0.5);
-    const cy = fy(level, 0.5);
+    const list = byLevel[level] ?? [];
     if (type === 'dealClosed') {
       const who = list.find((a) => a.kind === 1 && a.home === 'phone');
       if (who) {
         who.state = 'cheer';
         who.timer = ttl;
-        burst(fx(who.u, who.v), fy(level, who.v) - 10);
+        burst(sx(who.tx, who.ty), sy(who.tx, who.ty, level) - 12);
       }
-      banner('tDEAL', cx, cy - 20, now, ttl);
+      showBanner('tDEAL', sx(8, 8), sy(8, 8, level) - 16, now, ttl);
     } else if (type === 'deploySuccess') {
-      banner('tDEPLOY', cx, cy - 18, now, ttl);
-      burst(cx, cy);
+      showBanner('tDEPLOY', sx(8, 7), sy(8, 7, level) - 16, now, ttl);
+      burst(sx(8, 7), sy(8, 7, level));
     } else {
       doorUntil = now + ttl;
       const visitor = list.find((a) => a.role === 2);
       if (visitor) {
         visitor.hidden = 0;
-        visitor.u = 0.08;
-        visitor.v = 0.2;
-        visitor.u0 = 0.08;
-        visitor.u1 = 0.42;
+        visitor.tx = TW - 3;
+        visitor.ty = TD - 3;
+        visitor.nx = 6;
+        visitor.ny = TD - 5;
         visitor.moving = 1;
         visitor.state = 'walk';
-        visitor.dir = 1;
         visitor.bubble = 1;
         visitor.timer = ttl;
       }
@@ -324,14 +269,14 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
       qh = (qh + 1) % queue.length;
       if (qh === qt) qt = (qt + 1) % queue.length;
     },
-    update(dt, now) {
+    update(dt) {
       while (qt !== qh) {
         const item = queue[qt];
-        if (item && item.level) apply(item.type, item.level, item.ttl, now);
+        if (item?.level) apply(item.type, item.level, item.ttl, performance.now());
         qt = (qt + 1) % queue.length;
       }
       const sec = dt * 0.001;
-      carT += sec * carDir * 0.16;
+      carT += sec * carDir * 0.18;
       if (carT > 1) {
         carT = 1;
         carDir = -1;
@@ -339,98 +284,109 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
         carT = 0;
         carDir = 1;
       }
-      for (const actor of actors) {
-        if (actor.kind !== 1 || actor.hidden) continue;
-        actor.acc += dt;
-        const step = actor.state === 'walk' || actor.state === 'swing' ? 140 : 280;
-        if (actor.acc >= step) {
-          actor.acc -= step;
-          if (actor.acc > step) actor.acc = 0;
-          actor.frame = (actor.frame + 1) % (actor.state === 'walk' ? 3 : 2);
+      for (const a of actors) {
+        if (a.kind !== 1 || a.hidden) continue;
+        a.acc += dt;
+        const pace = a.state === 'walk' || a.state === 'swing' ? 130 : 260;
+        if (a.acc >= pace) {
+          a.acc = 0;
+          a.frame += 1;
         }
-        if (actor.moving || actor.state === 'walk') {
-          const goal = actor.dir > 0 ? actor.u1 : actor.u0;
-          const du = goal - actor.u;
-          const stepU = 0.22 * sec;
-          if (Math.abs(du) <= stepU) {
-            actor.u = goal;
-            actor.dir = -actor.dir;
-            if (actor.home !== 'walk') {
-              actor.moving = 0;
-              actor.state = actor.home;
-              actor.u = actor.homeU;
-              actor.v = actor.homeV;
-              actor.timer = 900 + (actor.seed % 1200);
+        if (a.moving || a.state === 'walk') {
+          const dx = a.nx - a.tx;
+          const dy = a.ny - a.ty;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 0.06) {
+            a.tx = a.nx;
+            a.ty = a.ny;
+            if (a.home === 'walk' || a.role === 2) {
+              const swap = a.nx;
+              a.nx = a.homeX;
+              a.ny = a.homeY;
+              a.homeX = swap;
+              a.homeY = a.ty;
+              a.dir = a.nx >= a.tx ? 1 : -1;
+            } else {
+              a.moving = 0;
+              a.state = a.home;
+              a.tx = a.homeX;
+              a.ty = a.homeY;
+              a.timer = 800 + (a.seed % 1400);
             }
           } else {
-            actor.u += Math.sign(du) * stepU;
-            actor.state = 'walk';
+            const step = Math.min(1.7 * sec, dist);
+            a.tx += (dx / dist) * step;
+            a.ty += (dy / dist) * step;
+            a.dir = dx - dy >= 0 ? 1 : -1;
+            a.state = 'walk';
           }
-        } else if (actor.state !== 'swing') {
-          actor.timer -= dt;
-          if (actor.timer > 0 || actor.state === 'cheer') continue;
-          actor.seed = nextSeed(actor.seed || 1);
-          const r = (actor.seed % 1000) / 1000;
-          if (actor.home === 'sit' || actor.home === 'phone') {
-            if (r < 0.62) {
-              actor.state = actor.home;
-              actor.timer = 1400 + r * 2200;
-            } else if (r < 0.78) {
-              actor.state = 'idle';
-              actor.timer = 700;
-            } else {
-              actor.u0 = Math.max(0.08, actor.homeU - 0.18);
-              actor.u1 = Math.min(0.92, actor.homeU + 0.18);
-              actor.u = actor.homeU;
-              actor.moving = 1;
-              actor.dir = r > 0.9 ? -1 : 1;
-              actor.state = 'walk';
-            }
-          } else if (actor.role === 2) {
-            actor.moving = 1;
-            actor.state = 'walk';
+        } else if (a.state !== 'swing' && a.state !== 'cheer') {
+          a.timer -= dt;
+          if (a.timer > 0) continue;
+          a.seed = nextSeed(a.seed || 1);
+          const r = (a.seed % 1000) / 1000;
+          if (a.home === 'sit' || a.home === 'phone' || a.home === 'chat') {
+            if (r < 0.55) {
+              a.state = a.home;
+              a.timer = 1200 + r * 2000;
+            } else if (r < 0.75) {
+              a.state = 'idle';
+              a.timer = 640;
+            } else if (inRoom(a.homeX + 2, a.homeY)) {
+              a.nx = a.homeX + 2;
+              a.ny = a.homeY;
+              a.moving = 1;
+              a.state = 'walk';
+            } else a.timer = 900;
           }
         }
       }
-      for (const pulse of pulses) {
-        pulse.head += pulse.speed * sec;
-        if (pulse.head >= pulse.total) pulse.head -= pulse.total;
+      for (const p of pulses) {
+        p.head += p.speed * sec;
+        if (p.head >= p.total) p.head -= p.total;
       }
-      for (const mote of motes) {
-        mote.y -= mote.speed * sec;
-        if (mote.y < 6) mote.y = VIEW - 8;
+      for (const m of motes) {
+        m.y -= m.speed * sec;
+        if (m.y < 4) m.y = VIEW - 6;
       }
-      for (const bit of bits) {
-        if (bit.life <= 0) continue;
-        bit.life -= dt;
-        bit.x += bit.vx * sec;
-        bit.y += bit.vy * sec;
+      for (const b of bits) {
+        if (b.life <= 0) continue;
+        b.life -= dt;
+        b.x += b.vx * sec;
+        b.y += b.vy * sec;
       }
-      void now;
     },
     draw(ctx, now) {
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(staticCanvas, 0, 0);
+      ctx.drawImage(bg, 0, 0);
       let style = '';
-      for (const mote of motes) {
-        const fill = MOTE[mote.style] ?? MOTE[0];
+      for (const m of motes) {
+        if (m.x > 70 && m.x < VIEW - 50 && m.y > 40 && m.y < VIEW - 20) continue;
+        const fill = MOTE[m.style] ?? MOTE[0];
         if (fill !== style) {
           ctx.fillStyle = fill ?? '#7FDBFF';
           style = fill ?? '';
         }
-        ctx.fillRect(mote.x | 0, mote.y | 0, 2, 2);
+        ctx.fillRect(m.x | 0, m.y | 0, 2, 2);
       }
-
       for (const cfg of floors) {
-        const list = floorOf[cfg.level] ?? [];
+        const shell = shells.get(cfg.level);
+        if (shell) ctx.drawImage(shell, 0, 0);
+      }
+      ctx.drawImage(roofs, 0, 0);
+      drawSign(ctx, atlas, now);
+      for (let li = floors.length - 1; li >= 0; li--) {
+        const cfg = floors[li];
+        if (!cfg) continue;
+        const list = byLevel[cfg.level] ?? [];
         const idx = order[cfg.level];
         if (!idx) continue;
         const n = list.length;
         for (let i = 1; i < n; i++) {
           const id = idx[i] ?? 0;
-          const key = list[id]?.v ?? 0;
+          const key = (list[id]?.tx ?? 0) + (list[id]?.ty ?? 0);
           let j = i - 1;
-          while (j >= 0 && (list[idx[j] ?? 0]?.v ?? 0) < key) {
+          while (j >= 0 && (list[idx[j] ?? 0]?.tx ?? 0) + (list[idx[j] ?? 0]?.ty ?? 0) > key) {
             idx[j + 1] = idx[j] ?? 0;
             j -= 1;
           }
@@ -438,53 +394,45 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
         }
         const hot = now < hotUntil[cfg.level];
         for (let k = 0; k < n; k++) {
-          const actor = list[idx[k] ?? 0];
-          if (!actor || actor.hidden) continue;
-          const name = actor.kind === 0 ? actor.sprite : personSprite(actor);
+          const a = list[idx[k] ?? 0];
+          if (!a || a.hidden) continue;
+          const footX = sx(a.tx + 0.5, a.ty + 0.5);
+          const footY = sy(a.tx + 0.5, a.ty + 0.5, cfg.level) - a.lift;
+          if (a.sprite === 'rack') {
+            drawRack(ctx, footX, footY, now, a.tx + a.ty);
+            continue;
+          }
+          const name = a.kind === 1 ? personSprite(a) : a.sprite;
           const frame = atlas.frames[name];
           if (!frame) continue;
-          const x = fx(actor.u, actor.v);
-          const y = fy(cfg.level, actor.v) - actor.lift + (actor.state === 'walk' && actor.frame === 1 ? -1 : 0);
-          blit(ctx, atlas, frame, x, y);
-          if (actor.kind === 0) drawMonitor(ctx, actor.sprite, frame, x, y, now, hot, actor.level);
-          if (actor.sprite === 'rack') drawLeds(ctx, frame, x, y, now, actor.u);
-          if (actor.sprite === 'gong' && hot) {
+          const bob = a.state === 'walk' && a.frame % 2 ? -1 : 0;
+          blit(ctx, atlas, frame, footX, footY + bob);
+          if (a.kind === 0) paintScreen(ctx, a.sprite, frame, footX, footY, now, hot, cfg.level);
+          if (a.sprite === 'gong' && hot) {
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect((x - 3) | 0, (y - frame.ay + 2) | 0, 6, 5);
+            ctx.fillRect((footX - 4) | 0, (footY - 16) | 0, 8, 8);
           }
-          if (actor.kind === 1 && actor.bubble && actor.state !== 'cheer' && actor.state !== 'walk') {
-            const bub = atlas.frames[actor.frame & 1 ? 'bubble2' : 'bubble'];
-            if (bub) blit(ctx, atlas, bub, x, y - frame.h - 1);
+          if (a.kind === 1 && a.bubble && a.state !== 'walk' && a.state !== 'cheer') {
+            const bub = atlas.frames[a.frame % 2 ? 'bubble2' : 'bubble'];
+            if (bub) blit(ctx, atlas, bub, footX, footY - frame.h - 1);
           }
         }
       }
-
-      const tails = ['#FFFFFF', '#BFF4FF', '#7FDBFF', '#2E9BFF'];
+      const cols = ['#FFFFFF', '#BFF4FF', '#7FDBFF', '#2E9BFF'];
       for (let t = 0; t < 4; t++) {
-        ctx.fillStyle = tails[t] ?? '#7FDBFF';
+        ctx.fillStyle = cols[t] ?? '#7FDBFF';
         const size = t === 0 ? 3 : 2;
-        for (const pulse of pulses) {
-          sample(pulse, pulse.head - t * 7);
-          ctx.fillRect(pulse.x | 0, pulse.y | 0, size, size);
+        for (const p of pulses) {
+          sample(p, p.head - t * 8);
+          ctx.fillRect(p.x | 0, p.y | 0, size, size);
         }
       }
-
-      const carY = frontY(1) + (frontY(7) - frontY(1)) * carT;
-      const carX = fx(1, 0.15) + 8;
-      ctx.fillStyle = '#071018';
-      ctx.fillRect((carX - 7) | 0, (carY - 16) | 0, 14, 18);
-      ctx.fillStyle = '#7FDBFF';
-      ctx.fillRect((carX - 7) | 0, (carY - 16) | 0, 14, 1);
-      ctx.fillRect((carX - 7) | 0, (carY + 1) | 0, 14, 1);
+      drawCar(ctx, carT);
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect((carX - 2) | 0, (carY - 8) | 0, 2, 2);
-
-      drawSign(ctx, atlas, now);
-      ctx.fillStyle = '#FFFFFF';
-      for (const bit of bits) {
-        if (bit.life <= 0) continue;
-        ctx.globalAlpha = Math.max(0, bit.life / bit.max);
-        ctx.fillRect(bit.x | 0, bit.y | 0, 2, 2);
+      for (const b of bits) {
+        if (b.life <= 0) continue;
+        ctx.globalAlpha = Math.max(0, b.life / b.max);
+        ctx.fillRect(b.x | 0, b.y | 0, 2, 2);
       }
       ctx.globalAlpha = 1;
       for (const item of banners) {
@@ -497,12 +445,12 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
         const frame = atlas.frames[item.frame];
         if (!frame) continue;
         ctx.globalAlpha = life < 0 ? 0 : life;
-        blit(ctx, atlas, frame, item.x, item.y - (1 - life) * 8);
+        blit(ctx, atlas, frame, item.x, item.y - (1 - life) * 10);
         ctx.globalAlpha = 1;
       }
       if (now < doorUntil) {
         ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(fx(0.06, 0) | 0, (fy(1, 0) - 3) | 0, 8, 3);
+        ctx.fillRect(sx(TW - 3, TD - 3) | 0, (sy(TW - 3, TD - 3, 1) - 4) | 0, 6, 3);
       }
       const tint = tintStyle(suzhouHour());
       if (tint) {
@@ -514,33 +462,7 @@ export function createScene(configs: readonly FloorConfig[]): Scene {
   };
 }
 
-function personSprite(actor: Actor): string {
-  const flip = actor.dir < 0 ? 'F' : '';
-  const f = actor.frame;
-  if (actor.state === 'cheer') return 'cheer';
-  if (actor.state === 'walk') return `w${f % 3}${flip}`;
-  if (actor.state === 'phone') return `p${f % 2}${flip}`;
-  if (actor.state === 'chat') return `c${f % 2}${flip}`;
-  if (actor.state === 'swing') return `g${f % 2}${flip}`;
-  if (actor.state === 'idle') return `w0${flip}`;
-  return `s${f % 2}${flip}`;
-}
-
-function blit(ctx: CanvasRenderingContext2D, atlas: Atlas, frame: Frame, footX: number, footY: number): void {
-  ctx.drawImage(
-    atlas.canvas,
-    frame.x,
-    frame.y,
-    frame.w,
-    frame.h,
-    (footX - frame.ax) | 0,
-    (footY - frame.ay) | 0,
-    frame.w,
-    frame.h,
-  );
-}
-
-function drawMonitor(
+function paintScreen(
   ctx: CanvasRenderingContext2D,
   sprite: string,
   frame: Frame,
@@ -555,303 +477,466 @@ function drawMonitor(
   for (const spot of spots) {
     const x = (footX - frame.ax + spot.x) | 0;
     const y = (footY - frame.ay + spot.y) | 0;
-    if (hot) {
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(x, y, spot.w, spot.h);
-      continue;
-    }
-    ctx.fillStyle = '#05080E';
+    ctx.fillStyle = hot ? '#FFFFFF' : '#05080E';
     ctx.fillRect(x, y, spot.w, spot.h);
+    if (hot) continue;
     ctx.fillStyle = '#FFFFFF';
     if (sprite === 'screen') {
-      const tick = (now / 300 + salt) | 0;
-      for (let i = 0; i < 6; i++) {
-        const bh = 1 + ((tick + i * 2) % (spot.h - 1));
-        ctx.fillRect(x + 1 + i * 3, y + spot.h - bh, 2, bh);
+      const tick = (now / 280 + salt) | 0;
+      for (let i = 0; i < 5; i++) {
+        const bh = 1 + ((tick + i) % Math.max(1, spot.h - 1));
+        ctx.fillRect(x + 2 + i * 3, y + spot.h - bh, 2, bh);
       }
     } else {
-      const mask = CODE[(((now / 160) | 0) + salt) % CODE.length] ?? 0;
-      for (let col = 0; col < spot.w; col++) {
-        if (mask & (1 << (col % 6))) ctx.fillRect(x + col, y + (col % spot.h), 1, 1);
-      }
+      const mask = CODE[(((now / 150) | 0) + salt) % CODE.length] ?? 0;
+      for (let c = 0; c < spot.w; c++) if (mask & (1 << (c % 6))) ctx.fillRect(x + c, y + (c % spot.h), 1, 1);
     }
   }
 }
 
-function drawLeds(ctx: CanvasRenderingContext2D, frame: Frame, footX: number, footY: number, now: number, salt: number): void {
-  for (let i = 0; i < RACK_LEDS.length; i++) {
-    const led = RACK_LEDS[i];
-    if (!led) continue;
-    const on = Math.sin(now * 0.008 + salt * 3 + led[1]) > -0.15;
-    ctx.fillStyle = on ? (i % 5 === 0 ? '#FFFFFF' : '#BFF4FF') : '#2E9BFF';
-    ctx.fillRect((footX - frame.ax + led[0]) | 0, (footY - frame.ay + led[1]) | 0, 1, 1);
+function drawRack(ctx: CanvasRenderingContext2D, cx: number, base: number, now: number, salt: number): void {
+  const h = 30;
+  const hw = 9;
+  const hh = 3;
+  const top = base - h;
+  ctx.fillStyle = '#0c2034';
+  ctx.fillRect((cx - hw) | 0, (top + hh) | 0, hw * 2, h - hh);
+  ctx.fillStyle = '#7FDBFF';
+  ctx.fillRect((cx - hw) | 0, (top + hh) | 0, 1, h - hh);
+  ctx.fillRect((cx + hw - 1) | 0, (top + hh) | 0, 1, h - hh);
+  for (let row = 0; row <= hh * 2; row++) {
+    const dist = row <= hh ? row : hh * 2 - row;
+    const half = (dist / hh) * hw;
+    ctx.fillStyle = '#14344e';
+    ctx.fillRect((cx - half) | 0, (top + row) | 0, Math.max(1, (half * 2) | 0), 1);
+    ctx.fillStyle = '#7FDBFF';
+    ctx.fillRect((cx - half) | 0, (top + row) | 0, 1, 1);
+    ctx.fillRect((cx + half) | 0, (top + row) | 0, 1, 1);
+  }
+  for (let i = 0; i < 7; i++) {
+    const on = Math.sin(now * 0.009 + salt + i * 0.7) > -0.1;
+    ctx.fillStyle = on ? (i % 3 === 0 ? '#FFFFFF' : '#BFF4FF') : '#2E9BFF';
+    ctx.fillRect((cx - 4) | 0, (base - 8 - i * 3) | 0, 2, 2);
+    ctx.fillRect((cx + 2) | 0, (base - 8 - i * 3) | 0, 2, 2);
   }
 }
 
-function layout(cfg: FloorConfig, add: (actor: Actor) => void, rnd: () => number): void {
-  const level = cfg.level;
-  const prop = (u: number, v: number, sprite: string, lift = 0) => {
-    const actor = makeActor(level, u, v, sprite, lift);
-    add(actor);
-  };
-  if (cfg.type === 'vacant') {
-    prop(0.22, 0.45, 'cone');
-    prop(0.4, 0.55, 'cone');
-    prop(0.62, 0.4, 'cone');
-    prop(0.78, 0.6, 'box');
-    prop(0.3, 0.7, 'box');
-    return;
-  }
-  if (cfg.type === 'lobby') {
-    prop(0.38, 0.62, 'bar');
-    prop(0.62, 0.78, 'screen', 16);
-    prop(0.18, 0.7, 'plant');
-    prop(0.78, 0.55, 'plant');
-    prop(0.52, 0.48, 'plant');
-    const host = asPerson(level, 0.4, 0.5, 'sit', 1, 0, 3);
-    add(host);
-    const n = cfg.people;
-    for (let i = 0; i < n; i++) {
-      const person = asPerson(level, 0.12 + i * 0.08, 0.22, 'walk', i % 2 ? -1 : 1, 2, 20 + i);
-      person.u0 = 0.08;
-      person.u1 = 0.55;
-      person.moving = 1;
-      person.home = 'walk';
-      add(person);
-    }
-    return;
-  }
-  if (cfg.type === 'lounge') {
-    prop(0.28, 0.6, 'sofa');
-    prop(0.48, 0.42, 'pong');
-    prop(0.78, 0.68, 'bar');
-    prop(0.7, 0.58, 'stool');
-    prop(0.86, 0.58, 'stool');
-    prop(0.16, 0.45, 'plant');
-    prop(0.9, 0.4, 'plant');
-    add(asPerson(level, 0.4, 0.32, 'swing', 1, 3, 8));
-    add(asPerson(level, 0.56, 0.32, 'swing', -1, 3, 9));
-    add(asPerson(level, 0.72, 0.5, 'chat', 1, 3, 10));
-    add(asPerson(level, 0.84, 0.48, 'chat', -1, 3, 11));
-    add(asPerson(level, 0.24, 0.48, 'chat', 1, 3, 12));
-    add(asPerson(level, 0.34, 0.46, 'chat', -1, 3, 13));
-    return;
-  }
-
-  const cols = cfg.type === 'it' ? 6 : Math.min(9, Math.max(6, Math.ceil(cfg.stations / 2)));
-  const rows = 2;
-  let placed = 0;
-  const seats: { u: number; v: number }[] = [];
-  for (let r = 0; r < rows; r++) {
-    const v = r === 0 ? 0.82 : 0.34;
-    for (let c = 0; c < cols && placed < cfg.stations; c++) {
-      const u = 0.1 + ((c + 0.5) * (cfg.type === 'it' ? 0.48 : 0.78)) / cols;
-      if (cfg.type === 'sales' && u > 0.78 && r === 0) continue;
-      const sprite = cfg.type === 'it' ? 'dual' : 'desk';
-      prop(u, v, sprite);
-      seats.push({ u, v });
-      placed += 1;
-    }
-  }
-  if (cfg.type === 'it') {
-    for (let i = 0; i < 4; i++) prop(0.62 + i * 0.09, 0.7, 'rack');
-    prop(0.84, 0.42, 'screen', 8);
-    add(asPerson(level, 0.66, 0.52, 'idle', -1, 1, 40));
-    add(asPerson(level, 0.84, 0.52, 'idle', 1, 1, 41));
-  } else if (cfg.type === 'sales') {
-    prop(0.22, 0.86, 'screen', 14);
-    prop(0.88, 0.62, 'gong');
-  } else if (cfg.type === 'rnd') {
-    prop(0.16, 0.9, 'board', 12);
-    if (level === 7) {
-      prop(0.7, 0.78, 'bench');
-      prop(0.86, 0.78, 'bench');
-    }
-    prop(0.92, 0.4, 'plant');
-  }
-
-  const occupied = Math.round(seats.length * cfg.occupancy);
-  for (let i = 0; i < occupied; i++) {
-    const seat = seats[i];
-    if (!seat) continue;
-    const phone = cfg.type === 'sales';
-    add(asPerson(level, seat.u + 0.015, seat.v - 0.12, phone ? 'phone' : 'sit', i % 2 ? -1 : 1, phone ? 4 : 0, 100 + level * 20 + i));
-  }
-  for (let i = 0; i < cfg.people; i++) {
-    const walker = asPerson(level, 0.2 + i * 0.2, 0.28, 'walk', 1, 1, 200 + i);
-    walker.u0 = 0.15;
-    walker.u1 = 0.7;
-    walker.moving = 1;
-    walker.home = 'walk';
-    add(walker);
-  }
-  void rnd;
-}
-
-function bakeShell(pix: Pix, cfg: FloorConfig, pulses: Pulse[]): void {
-  const level = cfg.level;
-  const y0 = fy(level, 0);
-  const y1 = fy(level, 1);
-  const vacant = cfg.type === 'vacant';
-  const wallTop = y1 - WALL_H;
-  if (!vacant) {
-    pix.rect(fx(0, 1), wallTop, FLOOR_W, WALL_H, RGB.side);
-    pix.trap(y1, y0, fx(0, 1), fx(1, 1), fx(0, 0), fx(1, 0), RGB.floor);
-  }
-  const edge = vacant ? RGB.white : RGB.ice;
-  const grid = vacant ? RGB.iceDim : RGB.iceFaint;
-  for (let i = 0; i <= 4; i++) {
-    const v = i / 4;
-    const x0 = fx(0, v);
-    const x1 = fx(1, v);
-    const y = fy(level, v);
-    if (vacant) pix.dashed(x0, y, x1, y, i % 2 ? RGB.white : RGB.deep, 3, 3);
-    else pix.line(x0, y, x1, y, i === 0 || i === 4 ? edge : grid);
-  }
-  for (let i = 0; i <= 10; i++) {
-    const u = i / 10;
-    pix.line(fx(u, 0), fy(level, 0), fx(u, 1), fy(level, 1), i === 0 || i === 10 ? edge : grid);
-  }
-  pix.rect(fx(0, 0), y0, FLOOR_W, SLAB, RGB.side);
-  pix.line(fx(0, 0), y0 + SLAB, fx(1, 0), y0 + SLAB, RGB.ice);
-  pix.line(fx(0, 0), y0, fx(1, 0), y0, RGB.bright);
-  pix.line(fx(0, 1), y1, fx(0, 1), wallTop, RGB.ice);
-  pix.line(fx(1, 1), y1, fx(1, 1), wallTop, RGB.ice);
-  pix.line(fx(0, 1), wallTop, fx(1, 1), wallTop, RGB.ice);
-
-  if (!vacant) {
-    const windows = cfg.type === 'lobby' ? 4 : 8;
-    for (let i = 0; i < windows; i++) {
-      const u = 0.08 + i * (0.84 / windows);
-      if (cfg.type === 'sales' && u < 0.34 && u > 0.12) continue;
-      const x = fx(u, 1);
-      const top = wallTop + 6;
-      const bot = y1 - 4;
-      pix.rect(x, top, 18, Math.max(4, bot - top), RGB.hole);
-      pix.line(x, top, x + 18, top, RGB.ice);
-      pix.line(x, bot, x + 18, bot, RGB.ice);
-      pix.line(x, top, x, bot, RGB.ice);
-      pix.line(x + 18, top, x + 18, bot, RGB.ice);
-    }
-  }
-
-  const sideTop = wallTop;
-  const sideBot = y0 + SLAB;
-  pix.line(fx(1, 1) + 12, sideTop, fx(1, 1) + 12, sideBot, RGB.ice);
-  pix.line(fx(1, 0) + 8, y0, fx(1, 0) + 8, y0 + SLAB + 2, RGB.ice);
-  pix.line(fx(1, 1), y1, fx(1, 1) + 12, y1 - 4, RGB.ice);
-  for (let v = 0.4; v <= 1.01; v += 0.2) {
-    const x = fx(1, v);
-    const y = fy(level, v);
-    pix.line(x, y, x + 10, y - 4, RGB.deep);
-    pix.line(x + 10, y - 4, x + 10, y - 4 - 10, RGB.iceDim);
-  }
-
-  const stairTop = frontY(level) - PITCH + 6;
-  const stairBot = y0 + SLAB;
-  pix.rect(STAIR_X, stairTop, FLOOR_X - STAIR_X - 2, stairBot - stairTop, RGB.side);
-  pix.line(STAIR_X, stairTop, STAIR_X, stairBot, RGB.ice);
-  pix.line(FLOOR_X - 2, stairTop, FLOOR_X - 2, stairBot, RGB.ice);
-  const steps = 5;
-  const rise = (stairBot - stairTop) / steps;
-  for (let s = 0; s < steps; s++) {
-    const y = stairBot - (s + 1) * rise;
-    const left = s % 2 === 0;
-    const x0 = left ? STAIR_X + 4 : STAIR_X + 22;
-    const x1 = left ? STAIR_X + 24 : FLOOR_X - 6;
-    pix.rect(x0, y - 2, x1 - x0, 3, RGB.ice);
-    pix.line(left ? x1 : x0, y, left ? x1 : x0, y - rise, RGB.bright);
-  }
-
-  const lx = (fx(0.03, 1) + 2) | 0;
-  const ly = (wallTop + 8) | 0;
-  stampText(pix, lx, ly, cfg.label, 2, RGB.white, 'ui');
-  stampText(pix, lx, ly + 12, cfg.name, 1, RGB.ice, 'ui');
-
-  if (vacant) {
-    const text = 'VACANT';
-    const tw = textWidth(text, 2, 3);
-    stampText(pix, (fx(0.5, 0.55) - tw / 2) | 0, (fy(level, 0.55) - 16) | 0, text, 2, RGB.white, 'ui');
-  }
-
-  pulses.push(toPulse(jagPoints(fx(0, 0), y0, fx(1, 0), y0, 6), 34 + (level % 3) * 6, (level * 0.17) % 1));
-  pulses.push(toPulse(jagPoints(fx(0, 1), wallTop, fx(1, 1), wallTop, 6), 28, (level * 0.41) % 1));
-}
-
-function bakeRoof(pix: Pix, atlas: Atlas, pulses: Pulse[]): void {
-  const level = 7;
-  const y1 = fy(level, 1) - WALL_H - 2;
-  const depth = 14;
-  const y0 = y1 + depth;
-  const x0 = FLOOR_X + 10;
-  const x1 = FLOOR_X + FLOOR_W - 8;
-  const skew = 24;
-  pix.trap(y1, y0, x0 + skew, x1 + skew, x0, x1, RGB.floor);
-  pix.line(x0, y0, x1, y0, RGB.ice);
-  pix.line(x0 + skew, y1, x1 + skew, y1, RGB.ice);
-  pix.line(x0, y0, x0 + skew, y1, RGB.ice);
-  pix.line(x1, y0, x1 + skew, y1, RGB.ice);
-  pix.line(x0, y0 - 5, x1, y0 - 5, RGB.bright);
-  pix.line(x0 + skew, y1 - 5, x1 + skew, y1 - 5, RGB.bright);
-  const hvac = atlas.frames.hvac;
-  if (hvac) {
-    pix.blit(atlasPix(atlas), hvac.x, hvac.y, hvac.w, hvac.h, (x1 - 70) | 0, (y1 + 2) | 0);
-    pix.blit(atlasPix(atlas), hvac.x, hvac.y, hvac.w, hvac.h, (x1 - 36) | 0, (y0 - 16) | 0);
-  }
-  pix.line(x0 + 28, y1 + 6, x0 + 28, y1 - 16, RGB.ice);
-  pix.line(x0 + 22, y1 - 12, x0 + 36, y1 - 16, RGB.bright);
-  const ridge = jagPoints(x0, y0 - 5, x1 + skew, y1 - 5, 6);
-  drawJag(pix, ridge, RGB.deep);
-  pulses.push(toPulse(ridge, 36, 0.2));
-  void atlas;
-}
-
-function bakeFrame(pix: Pix): void {
-  const yTop = fy(7, 1) - WALL_H - 20;
-  const yBot = FRONT_1 + SLAB;
-  pix.line(STAIR_X, yTop, STAIR_X, yBot, RGB.ice);
-  pix.line(STAIR_X + 1, yTop, STAIR_X + 1, yBot, RGB.deep);
-  const rx = fx(1, 1) + 12;
-  pix.line(rx, yTop, rx, yBot, RGB.ice);
-  pix.line(rx + 1, yTop, rx + 1, yBot, RGB.deep);
-  const spine = jagPoints(STAIR_X, yBot, STAIR_X, yTop, 6);
-  void spine;
-}
-
-const atlasPixels = new WeakMap<Atlas, Pix>();
-
-function atlasPix(atlas: Atlas): Pix {
-  let pix = atlasPixels.get(atlas);
-  if (pix) return pix;
-  pix = new Pix(atlas.canvas.width, atlas.canvas.height);
-  const ctx = atlas.canvas.getContext('2d');
-  if (!ctx) return pix;
-  const data = ctx.getImageData(0, 0, atlas.canvas.width, atlas.canvas.height);
-  pix.data.set(data.data);
-  atlasPixels.set(atlas, pix);
-  return pix;
+function drawCar(ctx: CanvasRenderingContext2D, t: number): void {
+  const x = sx(TW - 2, 2);
+  const y1 = sy(TW - 2, 2, 1);
+  const y7 = sy(TW - 2, 2, 7);
+  const y = y1 + (y7 - y1) * t;
+  ctx.fillStyle = '#07131f';
+  ctx.fillRect((x - 8) | 0, (y - 18) | 0, 16, 20);
+  ctx.fillStyle = '#7FDBFF';
+  ctx.fillRect((x - 8) | 0, (y - 18) | 0, 16, 1);
+  ctx.fillRect((x - 8) | 0, (y + 1) | 0, 16, 1);
+  ctx.fillRect((x - 8) | 0, (y - 18) | 0, 1, 20);
+  ctx.fillRect((x + 7) | 0, (y - 18) | 0, 1, 20);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect((x - 2) | 0, (y - 8) | 0, 2, 2);
 }
 
 function drawSign(ctx: CanvasRenderingContext2D, atlas: Atlas, now: number): void {
   const logo = atlas.frames.logo;
   if (!logo) return;
-  const y1 = fy(7, 1) - WALL_H - 8;
-  const cx = FLOOR_X + FLOOR_W * 0.42;
-  const w = logo.w + 12;
+  const base = sy(5, 5, 7) - (PITCH - SLAB);
+  const cx = sx(5.2, 5.2);
+  const w = logo.w + 14;
   const h = logo.h + 10;
   const x = (cx - w / 2) | 0;
-  const y = (y1 - h - 6) | 0;
+  const y = (base - h) | 0;
   const pulse = 0.5 + 0.5 * Math.sin(now * 0.003);
   ctx.fillStyle = '#071018';
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = pulse > 0.6 ? '#FFFFFF' : '#7FDBFF';
-  ctx.fillRect(x, y, w, 1);
-  ctx.fillRect(x, y + h - 1, w, 1);
-  ctx.fillRect(x, y, 1, h);
-  ctx.fillRect(x + w - 1, y, 1, h);
-  ctx.fillRect(x + 8, y + h, 1, 6);
-  ctx.fillRect(x + w - 9, y + h, 1, 6);
-  blit(ctx, atlas, logo, cx, y + h - 4);
+  ctx.fillStyle = pulse > 0.55 ? '#FFFFFF' : '#7FDBFF';
+  ctx.fillRect(x, y, w, 2);
+  ctx.fillRect(x, y + h - 2, w, 2);
+  ctx.fillRect(x, y, 2, h);
+  ctx.fillRect(x + w - 2, y, 2, h);
+  ctx.fillRect((cx - 10) | 0, y + h, 2, 8);
+  ctx.fillRect((cx + 8) | 0, y + h, 2, 8);
+  blit(ctx, atlas, logo, cx, y + h - 3);
+}
+
+function layout(cfg: FloorConfig, add: (a: Actor) => void): void {
+  const level = cfg.level;
+  const used = new Uint8Array(TW * TD);
+  const prop = (x: number, y: number, sprite: string, lift = 0) => {
+    if (!inView(Math.round(x), Math.round(y))) return;
+    used[y * TW + x] = 1;
+    add({
+      level,
+      tx: x,
+      ty: y,
+      sprite,
+      kind: 0,
+      state: 'idle',
+      home: 'idle',
+      dir: 1,
+      frame: 0,
+      acc: 0,
+      timer: 0,
+      nx: x,
+      ny: y,
+      moving: 0,
+      role: 0,
+      homeX: x,
+      homeY: y,
+      hidden: 0,
+      bubble: 0,
+      seed: 1,
+      lift,
+    });
+  };
+  const person = (x: number, y: number, home: State, dir: number, role: number, seed: number): Actor => {
+    const actor: Actor = {
+      level,
+      tx: x,
+      ty: y,
+      sprite: '',
+      kind: 1,
+      state: home,
+      home,
+      dir,
+      frame: seed & 1,
+      acc: (seed * 40) % 200,
+      timer: 500 + (seed % 1600),
+      nx: x,
+      ny: y,
+      moving: 0,
+      role,
+      homeX: x,
+      homeY: y,
+      hidden: 0,
+      bubble: home === 'phone' || home === 'chat' ? 1 : 0,
+      seed,
+      lift: 0,
+    };
+    add(actor);
+    return actor;
+  };
+
+  if (cfg.type === 'vacant') {
+    prop(6, 8, 'cone');
+    prop(8, 7, 'cone');
+    prop(10, 6, 'cone');
+    prop(5, 6, 'box');
+    prop(9, 9, 'box');
+    return;
+  }
+  if (cfg.type === 'lobby') {
+    prop(6, 7, 'bar');
+    prop(7, 5, 'screen', 8);
+    prop(5, 8, 'plant');
+    prop(8, 6, 'plant');
+    prop(6, 6, 'plant');
+    person(6.4, 7.2, 'sit', 1, 0, 4);
+    for (let i = 0; i < cfg.people; i++) {
+      const px = 8 + (i % 3);
+      const py = 9 - (i % 2);
+      const visitor = person(px, py, 'walk', i % 2 ? -1 : 1, 2, 30 + i);
+      visitor.homeX = 5;
+      visitor.homeY = 8;
+      visitor.nx = 10;
+      visitor.ny = 6;
+      visitor.moving = 1;
+    }
+    return;
+  }
+  if (cfg.type === 'lounge') {
+    prop(5, 7, 'sofa');
+    prop(6, 6, 'pong');
+    prop(8, 5, 'bar');
+    prop(8, 6, 'stool');
+    prop(9, 5, 'stool');
+    prop(4, 8, 'plant');
+    prop(9, 6, 'plant');
+    person(6.2, 6.4, 'swing', 1, 3, 8);
+    person(8.2, 6.6, 'swing', -1, 3, 9);
+    person(9.3, 5.3, 'chat', 1, 3, 10);
+    person(10.6, 5.2, 'chat', -1, 3, 11);
+    person(4.6, 7.2, 'chat', 1, 3, 12);
+    person(5.8, 7.4, 'chat', -1, 3, 13);
+    return;
+  }
+
+  const seats: { x: number; y: number }[] = [];
+  const limitX = cfg.type === 'it' ? 8 : TW - 2;
+  for (let y = 2; y < TD - 1 && seats.length < cfg.stations; y += 2) {
+    for (let x = 2; x < limitX && seats.length < cfg.stations; x += 2) {
+      if (!inRoom(x, y)) continue;
+      if (used[y * TW + x]) continue;
+      const sprite = cfg.type === 'it' ? 'dual' : 'desk';
+      prop(x, y, sprite);
+      seats.push({ x, y });
+    }
+  }
+  if (cfg.type === 'it') {
+    prop(8, 5, 'rack');
+    prop(9, 4, 'rack');
+    prop(7, 6, 'rack');
+    prop(9, 5, 'rack');
+    prop(6, 6, 'screen', 6);
+    person(8.2, 6.2, 'idle', -1, 1, 50);
+    person(9.1, 6.4, 'idle', 1, 1, 51);
+  } else if (cfg.type === 'sales') {
+    prop(5, 7, 'screen', 10);
+    prop(8, 5, 'gong');
+  } else {
+    prop(5, 8, 'board', 8);
+    if (level === 7) {
+      prop(8, 5, 'bench');
+      prop(9, 4, 'bench');
+    }
+    prop(9, 6, 'plant');
+  }
+  const occupied = Math.round(seats.length * cfg.occupancy);
+  for (let i = 0; i < occupied; i++) {
+    const s = seats[i];
+    if (!s) continue;
+    const phone = cfg.type === 'sales';
+    person(s.x + 0.15, s.y + 0.55, phone ? 'phone' : 'sit', i % 2 ? -1 : 1, phone ? 4 : 0, 80 + level * 17 + i);
+  }
+  for (let i = 0; i < cfg.people; i++) {
+    const walker = {
+      level,
+      tx: 4 + i,
+      ty: 8,
+      sprite: '',
+      kind: 1,
+      state: 'walk' as State,
+      home: 'walk' as State,
+      dir: 1,
+      frame: 0,
+      acc: 0,
+      timer: 0,
+      nx: 8,
+      ny: 6,
+      moving: 1,
+      role: 1,
+      homeX: 4,
+      homeY: 8,
+      hidden: 0,
+      bubble: 0,
+      seed: 90 + i,
+      lift: 0,
+    };
+    add(walker);
+  }
+}
+
+function bakeBg(): HTMLCanvasElement {
+  const pix = new Pix(VIEW, VIEW);
+  pix.rect(0, 0, VIEW, VIEW, RGB.bg);
+  for (let i = 20; i < VIEW; i += 20) {
+    const c = i % 80 === 0 ? ([127, 219, 255, 32] as const) : ([127, 219, 255, 12] as const);
+    pix.hline(i, 0, VIEW - 1, c);
+    for (let y = 0; y < VIEW; y += 2) pix.px(i, y, c);
+  }
+  const stars = [24, 18, 40, 70, 18, 200, 36, 420, 500, 30, 516, 120, 508, 300, 490, 460];
+  for (let i = 0; i < stars.length; i += 2) pix.px(stars[i] ?? 0, stars[i + 1] ?? 0, RGB.bright);
+  return pix.toCanvas();
+}
+
+function bakeFloor(cfg: FloorConfig, pulses: Pulse[]): HTMLCanvasElement {
+  const pix = new Pix(VIEW, VIEW);
+  const level = cfg.level;
+  for (let y = 0; y < TD; y++) {
+    for (let x = 0; x < TW; x++) {
+      if (!inRoom(x, y) || cfg.type === 'vacant') continue;
+      fillTile(pix, x, y, level, (x + y) & 1 ? RGB.floor : RGB.floorAlt);
+    }
+  }
+  for (let y = 0; y < TD; y++) {
+    for (let x = 0; x < TW; x++) {
+      if (!inRoom(x, y)) continue;
+      const outline = (ax: number, ay: number, bx: number, by: number, open: boolean) => {
+        if (cfg.type === 'vacant') pix.dashed(ax, ay, bx, by, RGB.white, 3, 3);
+        else if (open) edgeDown(pix, ax, ay, bx, by);
+        else pix.line(ax, ay, bx, by, RGB.iceFaint);
+      };
+      const cutX = x + 1 < TW && y >= 0 && x + 1 >= TW - 5 && y >= TD - 4;
+      const cutY = y + 1 < TD && x >= TW - 5 && y + 1 >= TD - 4;
+      const rimX = x + 1 === TW;
+      const rimY = y + 1 === TD;
+      outline(sx(x + 1, y), sy(x + 1, y, level), sx(x + 1, y + 1), sy(x + 1, y + 1, level), cutX || rimX);
+      outline(sx(x, y + 1), sy(x, y + 1, level), sx(x + 1, y + 1), sy(x + 1, y + 1, level), cutY || rimY);
+      pix.line(sx(x, y), sy(x, y, level), sx(x + 1, y), sy(x + 1, y, level), RGB.iceFaint);
+      pix.line(sx(x, y), sy(x, y, level), sx(x, y + 1), sy(x, y + 1, level), RGB.iceFaint);
+    }
+  }
+  glassWall(pix, level, true);
+  glassWall(pix, level, false);
+  stairs(pix, level);
+  const label = findLabelTile();
+  if (label) {
+    const x = sx(label.x, label.y) - 8;
+    const y = sy(label.x, label.y, level) - 26;
+    stampText(pix, x | 0, y | 0, cfg.label, 2, RGB.white, 'ui');
+    stampText(pix, x | 0, (y + 12) | 0, cfg.name, 1, RGB.ice, 'ui');
+  }
+  if (cfg.type === 'vacant') {
+    stampText(pix, (sx(7, 7) - 24) | 0, (sy(7, 7, level) - 8) | 0, 'VACANT', 2, RGB.white, 'ui');
+  }
+  // current along the two outer walls
+  const left = wallPoints(level, true);
+  const right = wallPoints(level, false);
+  if (left.length > 2) pulses.push(toPulse(left, 30 + level * 3, (level * 0.2) % 1));
+  if (right.length > 2) pulses.push(toPulse(right, 34, (level * 0.45) % 1));
+  branch(pix, level);
+  return pix.toCanvas();
+}
+
+function findLabelTile(): { x: number; y: number } | null {
+  let best: { x: number; y: number } | null = null;
+  for (let y = 0; y < TD; y++) {
+    for (let x = 0; x < TW; x++) {
+      if (!inRoom(x, y)) continue;
+      if (!best || x < best.x || (x === best.x && y > best.y)) best = { x, y };
+    }
+  }
+  return best;
+}
+
+function wallPoints(level: number, left: boolean): number[] {
+  const pts: number[] = [];
+  const lip = level >= 7 ? -999 : sy(TW - 1, TD - 1, level + 1);
+  if (left) {
+    for (let y = 0; y <= TD; y++) {
+      const x = sx(0, y);
+      const yv = sy(0, y, level);
+      if (yv < lip + 8) continue;
+      pts.push(x, yv);
+    }
+  } else {
+    for (let x = 0; x <= TW; x++) {
+      const xv = sx(x, 0);
+      const yv = sy(x, 0, level);
+      if (yv < lip + 8) continue;
+      pts.push(xv, yv);
+    }
+  }
+  return pts;
+}
+
+function glassWall(pix: Pix, level: number, left: boolean): void {
+  const pts = wallPoints(level, left);
+  const h = Math.min(28, PITCH - SLAB - 8);
+  for (let i = 0; i + 3 < pts.length; i += 2) {
+    const x = pts[i] ?? 0;
+    const y = pts[i + 1] ?? 0;
+    const x2 = pts[i + 2] ?? x;
+    const y2 = pts[i + 3] ?? y;
+    pix.line(x, y, x2, y2, RGB.ice);
+    pix.line(x, y - h, x2, y2 - h, RGB.ice);
+    pix.line(x, y - h * 0.5, x2, y2 - h * 0.5, RGB.iceFaint);
+    if ((i / 2) % 2 === 0) pix.line(x, y, x, y - h, RGB.iceDim);
+  }
+}
+
+function stairs(pix: Pix, level: number): void {
+  // Steps climb the left-back edge, inside the footprint.
+  for (let s = 0; s < 4; s++) {
+    const y = TD - 2 - s;
+    const x = 1 + (s % 2);
+    if (y < 0) continue;
+    const x0 = sx(x, y);
+    const y0 = sy(x, y, level);
+    const x1 = sx(x + 0.8, y + 0.2);
+    const y1 = sy(x + 0.8, y + 0.2, level);
+    pix.line(x0, y0, x1, y1, RGB.ice);
+    pix.line(x0, y0, x0, y0 - 4, RGB.bright);
+  }
+}
+
+function branch(pix: Pix, level: number): void {
+  const x = sx(2, TD - 3);
+  const y = sy(2, TD - 3, level) - 10;
+  pix.line(x, y, x + 10, y - 8, RGB.deep);
+  pix.line(x + 10, y - 8, x + 6, y - 16, RGB.bright);
+  pix.line(x + 10, y - 8, x + 18, y - 6, RGB.deep);
+}
+
+function bakeRoof(pulses: Pulse[]): HTMLCanvasElement {
+  const pix = new Pix(VIEW, VIEW);
+  const level = 7;
+  const lift = PITCH - SLAB;
+  for (let y = 0; y < TD; y++) {
+    for (let x = 0; x < TW; x++) {
+      if (x + y < MIN_SUM - 3) continue;
+      if (x >= TW - 3 && y >= TD - 3) continue;
+      const px = sx(x, y);
+      const py = sy(x, y, level) - lift;
+      for (let row = 0; row <= HH * 2; row++) {
+        const dist = row <= HH ? row : HH * 2 - row;
+        const half = (dist / HH) * HW;
+        pix.hline(Math.round(py + row), Math.round(px - half), Math.round(px + half), (x + y) & 1 ? RGB.floorAlt : RGB.floor);
+      }
+    }
+  }
+  // parapet
+  for (let i = 0; i <= TW; i++) {
+    const x = sx(i, 2);
+    const y = sy(i, 2, level) - lift;
+    pix.line(x, y, x, y - 5, RGB.ice);
+  }
+  for (let i = 0; i <= TD; i++) {
+    const x = sx(2, i);
+    const y = sy(2, i, level) - lift;
+    pix.line(x, y, x, y - 5, RGB.ice);
+  }
+  // hvac boxes
+  boxAt(pix, 9, 4, level, lift, 16);
+  boxAt(pix, 11, 3, level, lift, 14);
+  // antenna
+  const ax = sx(4, 4);
+  const ay = sy(4, 4, level) - lift;
+  pix.line(ax, ay, ax, ay - 18, RGB.ice);
+  pix.line(ax - 5, ay - 14, ax + 6, ay - 18, RGB.bright);
+  pix.px(ax | 0, (ay - 18) | 0, RGB.white);
+  const ridge: number[] = [];
+  for (let i = 0; i <= TW; i++) ridge.push(sx(i, 1), sy(i, 1, level) - lift - 5);
+  pulses.push(toPulse(ridge, 40, 0.15));
+  const ridge2: number[] = [];
+  for (let i = 0; i <= TD; i++) ridge2.push(sx(1, i), sy(1, i, level) - lift - 5);
+  pulses.push(toPulse(ridge2, 36, 0.55));
+  // columns at the two side corners, full height of the stack
+  const corners: readonly (readonly [number, number])[] = [
+    [0, TD - 1],
+    [TW - 1, 0],
+  ];
+  for (const c of corners) {
+    const x = sx(c[0], c[1]);
+    const yTop = sy(c[0], c[1], 7) - lift;
+    const yBot = sy(c[0], c[1], 1) + SLAB;
+    pix.line(x, yTop, x, yBot, RGB.ice);
+    pix.line(x + 1, yTop, x + 1, yBot, RGB.deep);
+    const col: number[] = [];
+    const n = 24;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const yy = yBot + (yTop - yBot) * t;
+      const j = (i % 5) - 2;
+      col.push(x + j, yy);
+    }
+    pulses.push(toPulse(col, 42, c[0] === 0 ? 0.1 : 0.6));
+  }
+  return pix.toCanvas();
+}
+
+function boxAt(pix: Pix, x: number, y: number, level: number, lift: number, h: number): void {
+  const cx = sx(x + 0.5, y + 0.5);
+  const base = sy(x + 0.5, y + 0.5, level) - lift;
+  const top = base - h;
+  pix.rect(cx - 10, top + 4, 20, h - 4, RGB.side);
+  pix.line(cx - 10, top + 4, cx - 10, base, RGB.ice);
+  pix.line(cx + 10, top + 4, cx + 10, base, RGB.ice);
+  for (let row = 0; row <= 6; row++) {
+    const dist = row <= 3 ? row : 6 - row;
+    const half = (dist / 3) * 10;
+    pix.hline(Math.round(top + row), Math.round(cx - half), Math.round(cx + half), RGB.floorAlt);
+  }
 }
 
 let forcedHour = -1;
@@ -862,14 +947,12 @@ export function setForcedHour(hour: number): void {
   forcedHour = hour;
   cachedHour = -1;
 }
-
 function suzhouHour(): number {
   if (forcedHour >= 0) return forcedHour;
   let h = (Math.floor(Date.now() / 3_600_000) + 8) % 24;
   if (h < 0) h += 24;
   return h;
 }
-
 function tintStyle(hour: number): string {
   if (hour === cachedHour) return cachedTint;
   cachedHour = hour;
@@ -879,3 +962,6 @@ function tintStyle(hour: number): string {
   cachedTint = alpha ? `rgba(0,10,28,${alpha})` : '';
   return cachedTint;
 }
+
+void HW;
+void HH;

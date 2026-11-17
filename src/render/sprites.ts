@@ -176,13 +176,14 @@ const CHEER = [
 
 const PROPS: Record<string, string[]> = {
   desk: [
-    '.kkkkkkkk.',
-    'kwwwwwwwwk',
-    'kwwwwwwwwk',
-    'kwwwwwwwwk',
-    '.bbbbbbbb.',
-    'bbbbbbbbbb',
-    'b.bb..bb.b',
+    '...kkkkkkkkkk...',
+    '..kwwwwwwwwwwk..',
+    '..kwwwwwwwwwwk..',
+    '..kwwwwwwwwwwk..',
+    '...bbbbbbbbbb...',
+    'bbbbbbbbbbbbbbbb',
+    'b..bb......bb..b',
+    '.bb..........bb.',
   ],
   dual: [
     'kkkk...kkkk.',
@@ -381,7 +382,7 @@ export function buildAtlas(): Atlas {
 }
 
 export const SCREEN_OF: Record<string, { x: number; y: number; w: number; h: number }[]> = {
-  desk: [{ x: 1, y: 1, w: 8, h: 3 }],
+  desk: [{ x: 3, y: 1, w: 10, h: 3 }],
   dual: [
     { x: 1, y: 1, w: 3, h: 2 },
     { x: 8, y: 1, w: 3, h: 2 },
