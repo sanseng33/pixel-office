@@ -940,51 +940,51 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
   ): { x: number; y: number; pose: Person['pose']; roam: boolean; face: 1 | -1 }[] {
     if (role === 'lobby') {
       return [
-        { x: 3, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 7, y: 15, pose: 'walk', roam: true, face: 1 },
-        { x: 10, y: 7, pose: 'walk', roam: true, face: 1 },
-        { x: 15, y: 6, pose: 'walk', roam: true, face: 1 },
-        { x: 8, y: 12, pose: 'walk', roam: true, face: 1 },
-        { x: 9, y: 8, pose: 'walk', roam: true, face: 1 },
+        { x: 2, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
+        { x: 7, y: 11, pose: 'walk', roam: true, face: 1 },
+        { x: 12, y: 4, pose: 'walk', roam: true, face: 1 },
+        { x: 13, y: 4, pose: 'walk', roam: true, face: 1 },
+        { x: 14, y: 4, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'lounge') {
       return [
-        { x: 3, y: 14, pose: 'chat', roam: false, face: 1 },
-        { x: 8, y: 13, pose: 'chat', roam: false, face: 1 },
-        { x: 9, y: 7, pose: 'chat', roam: false, face: -1 },
-        { x: 11, y: 7, pose: 'walk', roam: true, face: 1 },
+        { x: 6, y: 11, pose: 'chat', roam: false, face: 1 },
+        { x: 7, y: 11, pose: 'chat', roam: false, face: 1 },
+        { x: 13, y: 4, pose: 'chat', roam: false, face: -1 },
+        { x: 14, y: 4, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'sales') {
       return [
-        { x: 2, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 6, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 14, y: 5, pose: 'sit', roam: false, face: 1 },
-        { x: 8, y: 14, pose: 'walk', roam: true, face: 1 },
+        { x: 1, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 5, y: 13, pose: 'sit', roam: false, face: -1 },
+        { x: 10, y: 6, pose: 'sit', roam: false, face: -1 },
+        { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'it') {
       return [
-        { x: 6, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 2, y: 13, pose: 'sit', roam: false, face: 1 },
+        { x: 1, y: 9, pose: 'sit', roam: false, face: -1 },
+        { x: 4, y: 9, pose: 'sit', roam: false, face: -1 },
       ];
     }
     if (role === 'vacant') return [];
     if (level <= 5) {
       return [
-        { x: 3, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 4, y: 12, pose: 'sit', roam: false, face: 1 },
-        { x: 12, y: 7, pose: 'sit', roam: false, face: 1 },
-        { x: 8, y: 12, pose: 'walk', roam: true, face: 1 },
+        { x: 1, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 5, y: 12, pose: 'sit', roam: false, face: 1 },
+        { x: 10, y: 7, pose: 'sit', roam: false, face: 1 },
+        { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
       ];
     }
     return [
-      { x: 2, y: 15, pose: 'sit', roam: false, face: -1 },
-      { x: 6, y: 15, pose: 'sit', roam: false, face: -1 },
-      { x: 4, y: 12, pose: 'sit', roam: false, face: 1 },
-      { x: 11, y: 6, pose: 'sit', roam: false, face: 1 },
-      { x: 8, y: 14, pose: 'walk', roam: true, face: 1 },
+        { x: 1, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 5, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 7, y: 13, pose: 'sit', roam: false, face: -1 },
+        { x: 10, y: 6, pose: 'sit', roam: false, face: -1 },
+      { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
     ];
   }
 
@@ -1017,150 +1017,176 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
     return footprintTiles(item).every((t) => towerSolid(t.x, t.y) && t.x >= 1 && t.y >= 1 && t.x <= edge && t.y <= edge);
   }
 
+  function visibleTile(x: number, y: number): boolean {
+    return inPlate(x, y) && x + y >= gridN - 1;
+  }
+
+  function inPlate(x: number, y: number): boolean {
+    const edge = gridN - 2;
+    return towerSolid(x, y) && x >= 1 && y >= 1 && x <= edge && y <= edge;
+  }
+
+  function isAisle(x: number, y: number): boolean {
+    if (y === 11 && x >= 1 && x <= 8) return true;
+    if (y === 4 && x >= 8 && x <= 15) return true;
+    return false;
+  }
+
   function stackAccents(role: FloorType, level = 7): Furn[] {
-    const rnd: Furn[] = level <= 5
-      ? [
-          { kind: 'desk', x: 3, y: 15, w: 2, face: -1 },
-          { kind: 'desk', x: 5, y: 15, w: 2, face: -1 },
-          { kind: 'desk', x: 2, y: 12, w: 2, face: 1 },
-          { kind: 'desk', x: 4, y: 12, w: 2, face: 1 },
-          { kind: 'desk', x: 6, y: 12, w: 2, face: 1 },
-          { kind: 'desk', x: 3, y: 10, w: 2, face: -1 },
-          { kind: 'desk', x: 6, y: 10, w: 2, face: -1 },
-          { kind: 'desk', x: 9, y: 7, w: 2, face: 1 },
-          { kind: 'desk', x: 12, y: 7, w: 2, face: 1 },
-          { kind: 'desk', x: 10, y: 5, w: 2, face: -1 },
-          { kind: 'desk', x: 14, y: 5, w: 2, face: -1 },
-          { kind: 'file', x: 8, y: 15, w: 1 },
-          { kind: 'file', x: 8, y: 11, w: 1 },
-          { kind: 'file', x: 15, y: 2, w: 1 },
-          { kind: 'board', x: 8, y: 13, w: 1 },
-          { kind: 'board', x: 15, y: 8, w: 1 },
-          { kind: 'plant', x: 8, y: 9, w: 1 },
-          { kind: 'plant', x: 11, y: 2, w: 1 },
-          { kind: 'print', x: 1, y: 12, w: 1 },
-        ]
-      : [
-          { kind: 'desk', x: 2, y: 15, w: 2, face: -1 },
-          { kind: 'desk', x: 4, y: 15, w: 2, face: -1 },
-          { kind: 'desk', x: 6, y: 15, w: 2, face: -1 },
-          { kind: 'desk', x: 2, y: 12, w: 2, face: 1 },
-          { kind: 'desk', x: 4, y: 12, w: 2, face: 1 },
-          { kind: 'desk', x: 6, y: 12, w: 2, face: 1 },
-          { kind: 'desk', x: 2, y: 10, w: 2, face: -1 },
-          { kind: 'desk', x: 4, y: 10, w: 2, face: -1 },
-          { kind: 'desk', x: 6, y: 10, w: 2, face: -1 },
-          { kind: 'desk', x: 9, y: 6, w: 2, face: 1 },
-          { kind: 'desk', x: 11, y: 6, w: 2, face: 1 },
-          { kind: 'desk', x: 14, y: 6, w: 2, face: 1 },
-          { kind: 'desk', x: 9, y: 4, w: 2, face: -1 },
-          { kind: 'desk', x: 11, y: 4, w: 2, face: -1 },
-          { kind: 'desk', x: 14, y: 4, w: 2, face: -1 },
-          { kind: 'file', x: 8, y: 15, w: 1 },
-          { kind: 'file', x: 8, y: 12, w: 1 },
-          { kind: 'file', x: 8, y: 10, w: 1 },
-          { kind: 'file', x: 15, y: 2, w: 1 },
-          { kind: 'board', x: 9, y: 2, w: 2 },
-          { kind: 'board', x: 12, y: 8, w: 2 },
-          { kind: 'plant', x: 8, y: 13, w: 1 },
-          { kind: 'plant', x: 15, y: 5, w: 1 },
-          { kind: 'print', x: 8, y: 9, w: 1 },
-        ];
-    if (role === 'lobby') {
-      return [
-        { kind: 'desk', x: 3, y: 15, w: 3, face: -1 },
-        { kind: 'gate', x: 2, y: 14, w: 1 },
-        { kind: 'gate', x: 6, y: 14, w: 1 },
-        { kind: 'sofa', x: 2, y: 13, w: 2 },
-        { kind: 'sofa', x: 6, y: 12, w: 2 },
-        { kind: 'table', x: 8, y: 14, w: 1 },
-        { kind: 'screen', x: 11, y: 5, w: 2 },
-        { kind: 'screen', x: 14, y: 4, w: 2 },
-        { kind: 'plant', x: 8, y: 15, w: 1 },
-        { kind: 'plant', x: 8, y: 13, w: 1 },
-        { kind: 'plant', x: 15, y: 7, w: 1 },
-        { kind: 'plant', x: 12, y: 8, w: 1 },
-      ];
-    }
-    if (role === 'lounge') {
-      return [
-        { kind: 'sofa', x: 2, y: 15, w: 2 },
-        { kind: 'sofa', x: 5, y: 15, w: 2 },
-        { kind: 'sofa', x: 2, y: 13, w: 2 },
-        { kind: 'sofa', x: 6, y: 13, w: 2 },
-        { kind: 'table', x: 4, y: 14, w: 1 },
-        { kind: 'table', x: 8, y: 14, w: 1 },
-        { kind: 'table', x: 8, y: 12, w: 1 },
-        { kind: 'shelf', x: 4, y: 12, w: 2 },
-        { kind: 'coffee', x: 10, y: 6, w: 2 },
-        { kind: 'pong', x: 13, y: 4, w: 3 },
-        { kind: 'plant', x: 8, y: 15, w: 1 },
-        { kind: 'plant', x: 7, y: 12, w: 1 },
-        { kind: 'plant', x: 15, y: 7, w: 1 },
-        { kind: 'plant', x: 12, y: 8, w: 1 },
-        { kind: 'plant', x: 9, y: 3, w: 1 },
-      ];
-    }
+    const items: Furn[] = [];
+    const blocked = new Set<string>();
+    const mark = (item: Furn) => {
+      for (const t of footprintTiles(item)) blocked.add(`${t.x},${t.y}`);
+    };
+    const put = (kind: Furn['kind'], x: number, y: number, w = 1, face: 1 | -1 = 1): boolean => {
+      const item: Furn = { kind, x, y, w, face };
+      const cells = footprintTiles(item);
+      if (cells.some((t) => !inPlate(t.x, t.y) || blocked.has(`${t.x},${t.y}`) || isAisle(t.x, t.y))) return false;
+      items.push(item);
+      mark(item);
+      return true;
+    };
+    const seen = (x: number, y: number) => visibleTile(x, y) && !blocked.has(`${x},${y}`) && !isAisle(x, y);
     if (role === 'sales') {
-      return [
-        { kind: 'room', x: 4, y: 10, w: 2 },
-        { kind: 'desk', x: 2, y: 15, w: 2, face: -1 },
-        { kind: 'desk', x: 6, y: 15, w: 2, face: -1 },
-        { kind: 'desk', x: 2, y: 12, w: 2, face: 1 },
-        { kind: 'desk', x: 8, y: 12, w: 1, face: 1 },
-        { kind: 'desk', x: 9, y: 6, w: 2, face: -1 },
-        { kind: 'desk', x: 12, y: 6, w: 2, face: -1 },
-        { kind: 'desk', x: 14, y: 5, w: 2, face: 1 },
-        { kind: 'desk', x: 9, y: 7, w: 2, face: 1 },
-        { kind: 'booth', x: 15, y: 3, w: 1 },
-        { kind: 'booth', x: 15, y: 8, w: 1 },
-        { kind: 'board', x: 12, y: 2, w: 2 },
-        { kind: 'plant', x: 8, y: 15, w: 1 },
-        { kind: 'plant', x: 1, y: 14, w: 1 },
-        { kind: 'plant', x: 11, y: 8, w: 1 },
-      ];
+      put('room', 3, 12, 2);
+      put('booth', 15, 7);
+      put('booth', 15, 5);
+    }
+    if (role === 'rnd' || role === 'sales') {
+      const rows: ReadonlyArray<readonly [number, 1 | -1]> =
+        level === 5
+          ? [
+              [15, -1],
+              [12, 1],
+              [10, -1],
+            ]
+          : [
+              [15, -1],
+              [13, -1],
+              [10, -1],
+            ];
+      for (const x of [1, 3, 5, 7]) {
+        for (const [y, face] of rows) put('desk', x, y, 2, face);
+      }
+      for (const x of [8, 10, 12, 14]) {
+        put('desk', x, 7, 2, 1);
+        put('desk', x, 6, 2, -1);
+        put('desk', x, 2, 2, -1);
+      }
     }
     if (role === 'it') {
-      return [
-        { kind: 'rack', x: 9, y: 6, w: 1 },
-        { kind: 'rack', x: 11, y: 6, w: 1 },
-        { kind: 'rack', x: 13, y: 6, w: 1 },
-        { kind: 'rack', x: 15, y: 6, w: 1 },
-        { kind: 'rack', x: 10, y: 4, w: 1 },
-        { kind: 'rack', x: 12, y: 4, w: 1 },
-        { kind: 'rack', x: 14, y: 4, w: 1 },
-        { kind: 'rack', x: 15, y: 3, w: 1 },
-        { kind: 'table', x: 2, y: 15, w: 3 },
-        { kind: 'table', x: 5, y: 13, w: 3 },
-        { kind: 'table', x: 2, y: 12, w: 3 },
-        { kind: 'desk', x: 6, y: 15, w: 2, face: -1 },
-        { kind: 'desk', x: 2, y: 13, w: 2, face: 1 },
-        { kind: 'desk', x: 8, y: 15, w: 1, face: -1 },
-        { kind: 'plant', x: 8, y: 12, w: 1 },
-        { kind: 'plant', x: 15, y: 7, w: 1 },
-      ];
+      for (let x = 1; x <= 8; x++) put('rack', x, 15);
+      for (let x = 2; x <= 8; x++) put('rack', x, 14);
+      for (let x = 3; x <= 8; x++) put('rack', x, 13);
+      for (let x = 9; x <= 15; x++) put('rack', x, 7);
+      for (let x = 10; x <= 15; x++) put('rack', x, 6);
+      for (let x = 11; x <= 15; x++) put('rack', x, 5);
+      put('table', 1, 12, 3);
+      put('table', 5, 12, 3);
+      put('table', 1, 10, 3);
+      put('table', 5, 10, 2);
+      put('desk', 1, 9, 2, -1);
+      put('desk', 4, 9, 2, -1);
+    }
+    if (role === 'lounge') {
+      for (const x of [1, 4, 6]) {
+        put('sofa', x, 15, 2);
+        put('sofa', x, 13, 2);
+        put('table', x, 12);
+        put('table', x, 10);
+        put('sofa', x, 9, 2);
+      }
+      put('shelf', 1, 8, 2);
+      put('coffee', 9, 6, 2);
+      put('coffee', 12, 6, 2);
+      put('pong', 13, 2, 3);
+      for (const x of [8, 10, 14]) {
+        put('sofa', x, 7, 2);
+        put('table', x, 5);
+        put('sofa', x, 3, 2);
+      }
+    }
+    if (role === 'lobby') {
+      put('desk', 2, 15, 3, -1);
+      put('gate', 1, 14);
+      put('gate', 7, 14);
+      put('sofa', 1, 13, 2);
+      put('sofa', 5, 13, 2);
+      put('sofa', 1, 12, 2);
+      put('sofa', 6, 12, 2);
+      put('table', 4, 10);
+      put('screen', 9, 7, 2);
+      put('screen', 12, 7, 2);
+      put('screen', 14, 5, 2);
+      put('screen', 10, 2, 2);
+      put('sofa', 8, 6, 2);
+      put('sofa', 13, 2, 2);
+      put('plant', 6, 10);
+      put('plant', 8, 15);
+    }
+    const filler: Furn['kind'][] =
+      role === 'rnd'
+        ? ['file', 'plant', 'plant', 'file']
+        : role === 'sales'
+          ? ['plant', 'file', 'plant']
+          : role === 'it'
+            ? ['plant', 'file', 'table']
+            : role === 'lounge'
+              ? ['plant', 'table', 'plant']
+              : role === 'lobby'
+                ? ['plant', 'table', 'plant']
+                : ['box', 'marker', 'chairs', 'box'];
+    const holeAt = (x: number, y: number) => {
+      for (let yy = y - 2; yy <= y; yy++) {
+        for (let xx = x - 2; xx <= x; xx++) {
+          let empty = true;
+          for (let j = 0; j < 3 && empty; j++) {
+            for (let i = 0; i < 3; i++) {
+              const tx = xx + i;
+              const ty = yy + j;
+              if (!visibleTile(tx, ty) || isAisle(tx, ty) || blocked.has(`${tx},${ty}`)) {
+                empty = false;
+                break;
+              }
+            }
+          }
+          if (empty) return true;
+        }
+      }
+      return false;
+    };
+    for (let guard = 0; guard < 500; guard++) {
+      let placed = false;
+      for (let y = 1; y <= 15 && !placed; y++) {
+        for (let x = 1; x <= 15; x++) {
+          if (!seen(x, y) || !holeAt(x, y)) continue;
+          if (role === 'vacant' && (x + y) % 2 === 0) continue;
+          const kind = filler[(x + y + level) % filler.length] ?? 'plant';
+          if (put(kind, x, y)) {
+            placed = true;
+            break;
+          }
+        }
+      }
+      if (!placed) break;
+    }
+    if (role === 'lounge' || role === 'lobby') {
+      for (let y = 1; y <= 15; y++) {
+        for (let x = 1; x <= 15; x++) {
+          if (!seen(x, y) || (x + y) % 2 !== 0) continue;
+          put(role === 'lounge' ? 'plant' : 'plant', x, y);
+        }
+      }
     }
     if (role === 'vacant') {
-      return [
-        { kind: 'box', x: 3, y: 15, w: 1 },
-        { kind: 'box', x: 5, y: 15, w: 1 },
-        { kind: 'box', x: 7, y: 14, w: 1 },
-        { kind: 'box', x: 2, y: 13, w: 1 },
-        { kind: 'box', x: 6, y: 12, w: 1 },
-        { kind: 'box', x: 8, y: 15, w: 1 },
-        { kind: 'box', x: 8, y: 11, w: 1 },
-        { kind: 'box', x: 12, y: 6, w: 2 },
-        { kind: 'box', x: 14, y: 5, w: 1 },
-        { kind: 'box', x: 15, y: 3, w: 1 },
-        { kind: 'marker', x: 4, y: 14, w: 1 },
-        { kind: 'marker', x: 9, y: 6, w: 1 },
-        { kind: 'marker', x: 13, y: 7, w: 1 },
-        { kind: 'marker', x: 15, y: 7, w: 1 },
-        { kind: 'marker', x: 6, y: 10, w: 1 },
-        { kind: 'chairs', x: 8, y: 13, w: 1 },
-      ];
+      for (let y = 1; y <= 15; y++) {
+        for (let x = 1; x <= 15; x++) {
+          if (!seen(x, y) || (x * 2 + y) % 3 !== 0) continue;
+          put((x + y) % 3 === 0 ? 'chairs' : 'box', x, y);
+        }
+      }
     }
-    return rnd;
+    return items;
   }
 
   function notchLayout(base: FloorLayout, role: FloorType, level: number): FloorLayout {
