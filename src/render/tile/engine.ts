@@ -261,44 +261,41 @@ export async function createTileFloor(
     return [iso(x0, y0, FLOOR_Z), iso(x1, y1, FLOOR_Z), iso(x1, y1, 0), iso(x0, y0, 0)];
   }
 
-  const HAIR = 0x5aaed4;
-  const ARM = 0x6eb6e4;
-  const EYE = 0x14324e;
-  const LEG = 0x0c3054;
-  const SCREEN = 0xf7fdff;
+const HAIR = 0x5aaed4;
+const ARM = 0x6eb6e4;
+const EYE = 0x14324e;
+const LEG = 0x0c3054;
+const SCREEN = 0xf7fdff;
+const INK = 0x07111c;
 
-  function raise(p: Pt, h: number): Pt {
-    return { x: p.x, y: p.y - h };
-  }
+function raise(p: Pt, h: number): Pt {
+  return { x: p.x, y: p.y - h };
+}
 
-  function corners(x0: number, y0: number, x1: number, y1: number, z: number): [Pt, Pt, Pt, Pt] {
-    return [iso(x0, y0, z), iso(x1, y0, z), iso(x1, y1, z), iso(x0, y1, z)];
-  }
+function corners(x0: number, y0: number, x1: number, y1: number, z: number): [Pt, Pt, Pt, Pt] {
+  return [iso(x0, y0, z), iso(x1, y0, z), iso(x1, y1, z), iso(x0, y1, z)];
+}
 
-  function volume(
-    g: Graphics,
-    a: Pt,
-    b: Pt,
-    c: Pt,
-    d: Pt,
-    h0: number,
-    h1: number,
-    top: number,
-    front: number,
-    side: number,
-    rim = true,
-  ): void {
-    const A = raise(a, h1);
-    const B = raise(b, h1);
-    const C = raise(c, h1);
-    const D = raise(d, h1);
-    const b0 = raise(b, h0);
-    const c0 = raise(c, h0);
-    const d0 = raise(d, h0);
-    poly(g, [b0, c0, C, B], side, 1);
-    poly(g, [d0, c0, C, D], front, 1);
-    poly(g, [A, B, C, D], top, 1, rim ? WHITE : undefined, 0.9);
-  }
+function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number): void {
+  const A = raise(a, h1);
+  const B = raise(b, h1);
+  const C = raise(c, h1);
+  const D = raise(d, h1);
+  const b0 = raise(b, h0);
+  const c0 = raise(c, h0);
+  const d0 = raise(d, h0);
+  poly(g, [b0, c0, C, B], INK, 1, ICE, 0.85);
+  poly(g, [d0, c0, C, D], INK, 1, ICE, 0.95);
+  poly(g, [A, B, C, D], INK, 1, WHITE, 1);
+}
+
+function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: number): void {
+  g.rect(x - 1, y, 1, h).fill({ color: ICE });
+  g.rect(x + w, y, 1, h).fill({ color: ICE });
+  g.rect(x, y - 1, w, 1).fill({ color: WHITE });
+  g.rect(x, y + h, w, 1).fill({ color: ICE });
+  g.rect(x, y, w, h).fill({ color: fill });
+}
 
   function drawHeart(g: Graphics, x: number, y: number): void {
     g.rect(x - 3, y, 2, 2).fill({ color: WHITE });
@@ -313,10 +310,10 @@ export async function createTileFloor(
     const fy = Math.round(foot.y);
     if (pose === 'sit') {
       const y = fy;
-      g.rect(fx - 5, y - 10, 10, 7).fill({ color: ICE });
-      g.rect(fx - 7, y - 9, 2, 5).fill({ color: ARM });
-      g.rect(fx + 5, y - 9, 2, 5).fill({ color: ARM });
-      g.rect(fx - 3, y - 16, 6, 6).fill({ color: WHITE });
+      mark(g, fx - 5, y - 10, 10, 7, ICE);
+      mark(g, fx - 7, y - 9, 2, 5, ARM);
+      mark(g, fx + 5, y - 9, 2, 5, ARM);
+      mark(g, fx - 3, y - 16, 6, 6, WHITE);
       g.rect(fx - 3, y - 18, 6, 3).fill({ color: HAIR });
       if (lit) g.rect(fx - 2, y - 14, 4, 2).fill({ color: 0xd8f4ff });
       g.rect(fx - 2, y - 14, 1, 1).fill({ color: lit ? 0x123044 : EYE });
@@ -328,12 +325,12 @@ export async function createTileFloor(
     const liftR = [0, 1, 2, 0][frame] ?? 0;
     const bob = frame === 1 || frame === 3 ? -1 : 0;
     const y = fy + bob;
-    g.rect(fx - 4, y - 12 - liftL, 3, 12).fill({ color: LEG });
-    g.rect(fx + 1, y - 12 - liftR, 3, 12).fill({ color: LEG });
-    g.rect(fx - 5, y - 21, 10, 9).fill({ color: ICE });
-    g.rect(fx - 8, y - 20 + liftR, 3, 7).fill({ color: ARM });
-    g.rect(fx + 5, y - 20 + liftL, 3, 7).fill({ color: ARM });
-    g.rect(fx - 3, y - 27, 6, 6).fill({ color: WHITE });
+    mark(g, fx - 4, y - 12 - liftL, 3, 12, LEG);
+    mark(g, fx + 1, y - 12 - liftR, 3, 12, LEG);
+    mark(g, fx - 5, y - 21, 10, 9, ICE);
+    mark(g, fx - 8, y - 20 + liftR, 3, 7, ARM);
+    mark(g, fx + 5, y - 20 + liftL, 3, 7, ARM);
+    mark(g, fx - 3, y - 27, 6, 6, WHITE);
     g.rect(fx - 3, y - 29, 6, 4).fill({ color: HAIR });
     g.rect(fx - 2, y - 25, 1, 1).fill({ color: EYE });
     g.rect(fx + 1, y - 25, 1, 1).fill({ color: EYE });
@@ -344,30 +341,30 @@ export async function createTileFloor(
     const fx = Math.round(foot.x);
     const fy = Math.round(foot.y);
     const type = Math.floor(phase * 6) % 2;
-    g.rect(fx - 10, fy - 4 + type, 5, 3).fill({ color: 0x1d4e78 });
-    g.rect(fx + 5, fy - 4 + (1 - type), 5, 3).fill({ color: 0x1d4e78 });
-    g.rect(fx - 8, fy - 3 + type, 2, 1).fill({ color: SCREEN });
-    g.rect(fx + 6, fy - 3 + (1 - type), 2, 1).fill({ color: SCREEN });
+    g.rect(fx - 10, fy - 4 + type, 5, 3).fill({ color: ARM });
+    g.rect(fx + 5, fy - 4 + (1 - type), 5, 3).fill({ color: ARM });
+    g.rect(fx - 9, fy - 4 + type, 5, 1).fill({ color: WHITE });
+    g.rect(fx + 5, fy - 4 + (1 - type), 5, 1).fill({ color: WHITE });
   }
 
   function drawMonitor(g: Graphics, mx: number, my: number, towardCamera: boolean, lit: boolean, now: number): void {
-    const center = raise(iso(mx, my, FLOOR_Z), DESK_H + 6);
+    const center = raise(iso(mx, my, FLOOR_Z), DESK_H + 4);
     const px = Math.round(center.x);
     const py = Math.round(center.y);
-    g.rect(px - 1, py + 5, 2, 3).fill({ color: 0x10283c });
-    g.rect(px - 5, py - 7, 10, 13).fill({ color: 0x061018 });
-    g.rect(px + 4, py - 6, 2, 12).fill({ color: 0x02060c });
-    if (towardCamera) {
-      g.rect(px - 4, py - 6, 7, 10).fill({ color: lit ? SCREEN : 0x8ec8ee });
-      if (lit) {
-        const scan = Math.floor(now / 140 + mx * 3) % 7;
-        g.rect(px - 4, py - 6 + scan, 7, 1).fill({ color: 0xc5ecff });
-        glowSpots.push({ x: px, y: py - 1 });
-      }
+    g.rect(px, py + 3, 1, 3).fill({ color: ICE });
+    g.rect(px - 4, py - 7, 8, 10).fill({ color: INK });
+    g.rect(px - 4, py - 7, 8, 1).fill({ color: WHITE });
+    g.rect(px - 4, py + 2, 8, 1).fill({ color: ICE });
+    g.rect(px - 4, py - 7, 1, 10).fill({ color: ICE });
+    g.rect(px + 3, py - 7, 1, 10).fill({ color: ICE });
+    if (towardCamera && lit) {
+      g.rect(px - 3, py - 6, 6, 7).fill({ color: SCREEN });
+      const scan = Math.floor(now / 160 + mx * 3) % 5;
+      g.rect(px - 3, py - 6 + scan, 6, 1).fill({ color: 0xc5ecff });
+      glowSpots.push({ x: px, y: py - 2 });
       return;
     }
-    g.rect(px - 4, py - 6, 7, 10).fill({ color: 0x0c1826 });
-    g.rect(px - 4, py - 6, 7, 1).fill({ color: 0x1a3c58 });
+    g.rect(px - 3, py - 6, 6, 7).fill({ color: towardCamera ? 0x0c1a28 : 0x050c14 });
   }
 
   function drawDesk(g: Graphics, item: Furn): void {
@@ -377,48 +374,54 @@ export async function createTileFloor(
     const [a, b, c, d] = corners(x + 0.08, y + 0.16, x + item.w - 0.08, y + 0.84, FLOOR_Z);
     for (const p of [a, b, c, d]) {
       const legTop = raise(p, 4);
-      g.rect(Math.round(p.x), Math.round(legTop.y), 1, Math.max(1, Math.round(p.y - legTop.y))).fill({ color: 0x0c2844 });
+      g.rect(Math.round(p.x), Math.round(legTop.y), 1, Math.max(1, Math.round(p.y - legTop.y))).fill({ color: ICE });
     }
-    volume(g, a, b, c, d, 4, DESK_H, 0x9ed4f6, 0x2f74b0, 0x163e68);
-    const kx0 = x + 0.48;
-    const kx1 = x + item.w - 0.48;
-    const ky0 = face === 1 ? y + 0.5 : y + 0.26;
-    const ky1 = face === 1 ? y + 0.7 : y + 0.46;
+    volume(g, a, b, c, d, 4, DESK_H);
+    const kx0 = x + 0.55;
+    const kx1 = x + item.w - 0.55;
+    const ky0 = face === 1 ? y + 0.48 : y + 0.32;
+    const ky1 = face === 1 ? y + 0.64 : y + 0.48;
     const [k1, k2, k3, k4] = corners(kx0, ky0, kx1, ky1, FLOOR_Z);
     poly(
       g,
       [raise(k1, DESK_H + 1), raise(k2, DESK_H + 1), raise(k3, DESK_H + 1), raise(k4, DESK_H + 1)],
-      0x07131f,
+      INK,
+      1,
+      ICE,
       1,
     );
     const key = raise(iso((kx0 + kx1) / 2, (ky0 + ky1) / 2, FLOOR_Z), DESK_H + 1);
     const kx = Math.round(key.x);
     const ky = Math.round(key.y);
-    for (let i = -2; i <= 2; i++) g.rect(kx + i * 3, ky, 2, 1).fill({ color: i % 2 === 0 ? ICE : SCREEN });
+    g.rect(kx - 4, ky, 2, 1).fill({ color: WHITE });
+    g.rect(kx - 1, ky, 2, 1).fill({ color: ICE });
+    g.rect(kx + 2, ky, 2, 1).fill({ color: WHITE });
   }
 
   function drawMonitors(g: Graphics, item: Furn, now: number): void {
     const face = item.face ?? 1;
     const occupied = occupiedAt(item.x, item.y);
-    const my = face === 1 ? item.y + 0.28 : item.y + 0.72;
-    drawMonitor(g, item.x + 0.32, my, face === 1, occupied, now);
-    drawMonitor(g, item.x + 1.68, my, face === 1, occupied, now);
+    const my = face === 1 ? item.y + 0.18 : item.y + 0.82;
+    drawMonitor(g, item.x + 0.42, my, face === 1, occupied, now);
+    drawMonitor(g, item.x + 1.58, my, face === 1, occupied, now);
   }
 
   function drawChair(g: Graphics, item: Furn): void {
     const face = item.face ?? 1;
     const cx = item.x + item.w / 2;
-    const y0 = face === 1 ? item.y + 0.82 : item.y - 0.18;
-    const y1 = face === 1 ? item.y + 1.2 : item.y + 0.2;
-    const [a, b, c, d] = corners(cx - 0.3, y0, cx + 0.3, y1, FLOOR_Z);
-    volume(g, a, b, c, d, 0, 5, 0x4c96cc, 0x1d5688, 0x123858);
+    const y0 = face === 1 ? item.y + 0.58 : item.y + 0.18;
+    const y1 = face === 1 ? item.y + 0.8 : item.y + 0.4;
+    const [a, b, c, d] = corners(cx - 0.16, y0, cx + 0.16, y1, FLOOR_Z);
+    volume(g, a, b, c, d, 0, 3);
     const by = face === 1 ? y1 - 0.02 : y0 + 0.02;
-    const hinge = raise(iso(cx, by, FLOOR_Z), 5);
+    const hinge = raise(iso(cx, by, FLOOR_Z), 3);
     const hx = Math.round(hinge.x);
     const hy = Math.round(hinge.y);
-    g.rect(hx - 7, hy - 18, 15, 16).fill({ color: 0x1a527f });
-    g.rect(hx - 7, hy - 18, 15, 2).fill({ color: ICE });
-    g.rect(hx + 7, hy - 16, 1, 14).fill({ color: 0x0e3050 });
+    g.rect(hx - 3, hy - 8, 7, 6).fill({ color: INK });
+    g.rect(hx - 3, hy - 8, 7, 1).fill({ color: WHITE });
+    g.rect(hx - 3, hy - 3, 7, 1).fill({ color: ICE });
+    g.rect(hx - 3, hy - 8, 1, 6).fill({ color: ICE });
+    g.rect(hx + 3, hy - 8, 1, 6).fill({ color: ICE });
   }
 
   function drawFurn(g: Graphics, item: Furn, now: number): void {
@@ -428,29 +431,38 @@ export async function createTileFloor(
     }
     if (item.kind === 'table') {
       const [a, b, c, d] = corners(item.x + 0.08, item.y + 0.22, item.x + item.w - 0.08, item.y + 0.78, FLOOR_Z);
-      volume(g, a, b, c, d, 3, 9, 0x8ec8f0, 0x2a649c, 0x14385c);
+      volume(g, a, b, c, d, 3, 9);
       return;
     }
     if (item.kind === 'plant') {
-      const [a, b, c, d] = corners(item.x + 0.32, item.y + 0.32, item.x + 0.68, item.y + 0.68, FLOOR_Z);
-      volume(g, a, b, c, d, 0, 5, 0x2a6a9c, 0x16486e, 0x0e304c, false);
-      const leaf = raise(iso(item.x + 0.5, item.y + 0.5, FLOOR_Z), 5);
+      const [a, b, c, d] = corners(item.x + 0.34, item.y + 0.34, item.x + 0.66, item.y + 0.66, FLOOR_Z);
+      volume(g, a, b, c, d, 0, 4);
+      const leaf = raise(iso(item.x + 0.5, item.y + 0.5, FLOOR_Z), 4);
       const lx = Math.round(leaf.x);
       const ly = Math.round(leaf.y);
-      g.rect(lx - 1, ly - 3, 2, 3).fill({ color: 0x1a4a70 });
-      g.rect(lx - 5, ly - 8, 10, 6).fill({ color: ICE });
-      g.rect(lx - 3, ly - 12, 7, 5).fill({ color: WHITE });
-      g.rect(lx - 1, ly - 14, 3, 3).fill({ color: ICE });
+      g.rect(lx, ly - 4, 1, 4).fill({ color: ICE });
+      g.rect(lx - 4, ly - 9, 9, 6).fill({ color: INK });
+      g.rect(lx - 4, ly - 9, 9, 1).fill({ color: WHITE });
+      g.rect(lx - 4, ly - 4, 9, 1).fill({ color: ICE });
+      g.rect(lx - 4, ly - 9, 1, 6).fill({ color: ICE });
+      g.rect(lx + 4, ly - 9, 1, 6).fill({ color: ICE });
+      g.rect(lx - 2, ly - 12, 5, 3).fill({ color: INK });
+      g.rect(lx - 2, ly - 12, 5, 1).fill({ color: WHITE });
+      g.rect(lx - 2, ly - 12, 1, 3).fill({ color: ICE });
+      g.rect(lx + 2, ly - 12, 1, 3).fill({ color: ICE });
       return;
     }
     const [a, b, c, d] = corners(item.x + 0.06, item.y + 0.16, item.x + item.w - 0.06, item.y + 0.84, FLOOR_Z);
-    volume(g, a, b, c, d, 0, 11, 0x7ebce8, 0x245888, 0x123050);
+    volume(g, a, b, c, d, 0, 11);
     for (const ux of [0.55, 1.35]) {
       const cup = raise(iso(item.x + ux, item.y + 0.48, FLOOR_Z), 11);
       const cx = Math.round(cup.x);
       const cy = Math.round(cup.y);
-      g.rect(cx - 2, cy - 5, 4, 4).fill({ color: 0x071018 });
-      g.rect(cx - 1, cy - 4, 2, 2).fill({ color: ux < 1 ? SCREEN : ICE });
+      g.rect(cx - 2, cy - 5, 4, 4).fill({ color: INK });
+      g.rect(cx - 2, cy - 5, 4, 1).fill({ color: WHITE });
+      g.rect(cx - 2, cy - 2, 4, 1).fill({ color: ICE });
+      g.rect(cx - 2, cy - 5, 1, 4).fill({ color: ICE });
+      g.rect(cx + 1, cy - 5, 1, 4).fill({ color: ICE });
     }
     void now;
   }
@@ -479,7 +491,7 @@ export async function createTileFloor(
             const b = iso(x + 1, y, FLOOR_Z);
             const c = iso(x + 1, y, WALL_Z);
             const d = iso(x, y, WALL_Z);
-            poly(g, [a, b, c, d], 0x09182c, 0.88, DIM, 0.4);
+            poly(g, [a, b, c, d], 0x09182c, 0.92, ICE, 0.45);
           });
         }
         if (x === 0) {
@@ -488,7 +500,7 @@ export async function createTileFloor(
             const b = iso(x, y + 1, FLOOR_Z);
             const c = iso(x, y + 1, WALL_Z);
             const d = iso(x, y, WALL_Z);
-            poly(g, [a, b, c, d], 0x081624, 0.88, DIM, 0.35);
+            poly(g, [a, b, c, d], 0x081624, 0.92, ICE, 0.4);
           });
         }
       }
@@ -499,12 +511,12 @@ export async function createTileFloor(
         const face = item.face ?? 1;
         if (face === 1) {
           pushDraw(frontX, item.y, 5, (g) => drawDesk(g, item));
-          pushDraw(frontX, item.y, 7, (g) => drawChair(g, item));
-          pushDraw(frontX, item.y, 11, (g) => drawMonitors(g, item, now));
+          pushDraw(frontX, item.y, 7, (g) => drawMonitors(g, item, now));
+          pushDraw(frontX, item.y, 8, (g) => drawChair(g, item));
         } else {
-          pushDraw(frontX, item.y, 4, (g) => drawChair(g, item));
+          pushDraw(frontX, item.y, 3, (g) => drawChair(g, item));
           pushDraw(frontX, item.y, 6, (g) => drawDesk(g, item));
-          pushDraw(frontX, item.y, 11, (g) => drawMonitors(g, item, now));
+          pushDraw(frontX, item.y, 9, (g) => drawMonitors(g, item, now));
         }
         continue;
       }
@@ -512,23 +524,24 @@ export async function createTileFloor(
     }
     for (const person of people) {
       const atDesk = person.pose === 'sit';
+      const alongSeat = person.face === 1 ? 0.72 : 0.28;
       const gx = atDesk ? person.homeX + person.span - 1 : Math.round(person.x);
       const gy = atDesk ? person.homeY : Math.round(person.y);
-      const z = atDesk ? 9 : 12;
+      const z = atDesk ? (person.face === 1 ? 10 : 4) : 12;
       pushDraw(gx, gy, z, (g) => {
-        const along = atDesk ? (person.face === 1 ? 0.58 : 0.24) : 0.5;
+        const along = atDesk ? alongSeat : 0.5;
         const across = atDesk ? person.span / 2 : 0.5;
         const ox = atDesk ? person.homeX : person.x;
         const oy = atDesk ? person.homeY : person.y;
         const floorPt = iso(ox + across, oy + along, FLOOR_Z);
-        const foot = atDesk ? raise(floorPt, DESK_H) : floorPt;
+        const foot = atDesk ? raise(floorPt, DESK_H - 2) : floorPt;
         drawPerson(g, foot, person.pose, person.phase, atDesk);
       });
       if (atDesk) {
-        pushDraw(gx, gy, 13, (g) => {
-          const along = person.face === 1 ? 0.58 : 0.24;
+        pushDraw(gx, gy, person.face === 1 ? 12 : 5, (g) => {
+          const along = person.face === 1 ? 0.72 : 0.28;
           const floorPt = iso(person.homeX + person.span / 2, person.homeY + along, FLOOR_Z);
-          drawArms(g, raise(floorPt, DESK_H), person.phase);
+          drawArms(g, raise(floorPt, DESK_H - 2), person.phase);
         });
       }
     }
