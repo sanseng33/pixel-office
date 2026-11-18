@@ -44,7 +44,7 @@ function stridePose(dirX: number, dirY: number, frame: number): {
     y: s(py * side + wy * along),
   });
   return {
-    bob: frame % 2 === 1 ? -1 : 0,
+    bob: 0,
     left: at(reach, 1),
     right: at(-reach, -1),
     armL: at(-Math.sign(reach), 2),
@@ -457,10 +457,6 @@ export async function createTileFloor(
     return [iso(x0, y0, floorZ), iso(x1, y1, floorZ), iso(x1, y1, 0), iso(x0, y0, 0)];
   }
 
-const HAIR = 0x5aaed4;
-const ARM = 0x6eb6e4;
-const EYE = 0x14324e;
-const LEG = 0x0c3054;
 const INK = 0x07111c;
 
 function raise(p: Pt, h: number): Pt {
@@ -484,20 +480,87 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
   poly(g, [A, B, C, D], INK, 1, WHITE, 1);
 }
 
-function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: number): void {
-  g.rect(x - 1, y, 1, h).fill({ color: ICE });
-  g.rect(x + w, y, 1, h).fill({ color: ICE });
-  g.rect(x, y - 1, w, 1).fill({ color: WHITE });
-  g.rect(x, y + h, w, 1).fill({ color: ICE });
-  g.rect(x, y, w, h).fill({ color: fill });
-}
+  let personScale = 1;
 
   function drawHeart(g: Graphics, x: number, y: number): void {
-    g.rect(x - 3, y, 2, 2).fill({ color: WHITE });
-    g.rect(x + 1, y, 2, 2).fill({ color: WHITE });
-    g.rect(x - 3, y + 2, 6, 1).fill({ color: ICE });
-    g.rect(x - 2, y + 3, 4, 1).fill({ color: ICE });
-    g.rect(x - 1, y + 4, 2, 1).fill({ color: WHITE });
+    const s = personScale;
+    g.rect(x - 2 * s, y, s, s).fill({ color: WHITE });
+    g.rect(x + s, y, s, s).fill({ color: WHITE });
+    g.rect(x - 2 * s, y + s, 4 * s, s).fill({ color: ICE });
+    g.rect(x - s, y + 2 * s, 2 * s, s).fill({ color: ICE });
+  }
+
+  function drawGuy(
+    g: Graphics,
+    fx: number,
+    fy: number,
+    hair: number,
+    toward: boolean,
+    faceRight: boolean,
+    frame: number,
+    seated: boolean,
+    chat: boolean,
+    dirX: number,
+    dirY: number,
+  ): void {
+    const s = personScale;
+    const pix = (x: number, up: number, color: number) => {
+      g.rect(fx + x * s, fy - up * s, s, s).fill({ color });
+    };
+    const blk = (x: number, up: number, w: number, h: number, fill: number) => {
+      for (let yy = 0; yy < h; yy++) {
+        for (let xx = 0; xx < w; xx++) pix(x + xx, up - yy, fill);
+      }
+      for (let xx = 0; xx < w; xx++) {
+        pix(x + xx, up + 1, ICE);
+        pix(x + xx, up - h, ICE);
+      }
+      for (let yy = 0; yy < h; yy++) {
+        pix(x - 1, up - yy, ICE);
+        pix(x + w, up - yy, ICE);
+      }
+    };
+    const stride = stridePose(dirX, dirY, frame < 0 ? 0 : frame);
+    const ox = frame < 0 ? 0 : Math.round(stride.left.x);
+    const oy = frame < 0 ? 0 : Math.round(stride.left.y);
+    if (!seated) {
+      blk(-3 + ox, 4 - oy, 2, 3, NAVY);
+      blk(1 - ox, 4 + oy, 2, 3, NAVY);
+      pix(-3 + ox, 1 - oy, WHITE);
+      pix(2 - ox, 1 + oy, WHITE);
+    }
+    blk(-2, 8, 5, 4, NAVY);
+    pix(0, 8, WHITE);
+    pix(-1, 7, ICE);
+    pix(1, 7, ICE);
+    const arm = frame < 0 ? 0 : Math.round(stride.armL.y);
+    blk(-5, 7 + (chat ? 2 : arm), 2, 3, NAVY);
+    pix(-5, 5 + (chat ? 2 : arm), ICE);
+    blk(3, 7 - arm, 2, 3, NAVY);
+    pix(4, 5 - arm, ICE);
+    blk(-2, 13, 5, 5, NAVY);
+    if (toward) {
+      pix(-1, 11, WHITE);
+      pix(1, 11, WHITE);
+    } else {
+      blk(-2, 13, 5, 2, NAVY);
+    }
+    if (hair === 1) {
+      blk(-2, 15, 1, 2, NAVY);
+      blk(0, 16, 1, 3, NAVY);
+      blk(2, 15, 1, 2, NAVY);
+      blk(-2, 13, 5, 1, NAVY);
+    } else if (hair === 2) {
+      blk(-3, 14, 7, 2, NAVY);
+      blk(-3, 12, 1, 3, NAVY);
+      blk(3, 12, 1, 3, NAVY);
+    } else if (hair === 3) {
+      blk(-2, 14, 5, 2, NAVY);
+      blk(toward ? (faceRight ? -5 : 4) : faceRight ? 3 : -5, 12, 2, 4, NAVY);
+    } else {
+      blk(-2, 14, 5, 2, NAVY);
+    }
+    if (chat) drawHeart(g, fx, fy - 18 * s);
   }
 
   function drawPerson(
@@ -508,48 +571,30 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
     lit: boolean,
     dirX = 0,
     dirY = 1,
+    hair = 0,
   ): void {
     const fx = Math.round(foot.x);
     const fy = Math.round(foot.y);
-    if (pose === 'sit') {
-      const y = fy;
-      mark(g, fx - u(5), y - u(10), u(10), u(7), ICE);
-      mark(g, fx - u(7), y - u(9), u(2), u(5), ARM);
-      mark(g, fx + u(5), y - u(9), u(2), u(5), ARM);
-      mark(g, fx - u(3), y - u(16), u(6), u(6), WHITE);
-      g.rect(fx - u(3), y - u(18), u(6), u(3)).fill({ color: HAIR });
-      if (lit) g.rect(fx - u(2), y - u(14), u(4), u(2)).fill({ color: 0xd8f4ff });
-      g.rect(fx - u(2), y - u(14), u(1), u(1)).fill({ color: lit ? 0x123044 : EYE });
-      g.rect(fx + u(1), y - u(14), u(1), u(1)).fill({ color: lit ? 0x123044 : EYE });
-      return;
-    }
-    const frame = pose === 'walk' ? Math.floor(phase * 8) % 4 : 0;
-    const stride = stridePose(dirX, dirY, frame);
-    const y = fy + stride.bob;
-    const leg = (off: Pt, side: number) => {
-      mark(g, fx + off.x - u(1), y - u(12) + off.y, u(3), u(12), LEG);
-      void side;
-    };
-    leg(stride.left, -1);
-    leg(stride.right, 1);
-    mark(g, fx - u(5), y - u(21), u(10), u(9), ICE);
-    mark(g, fx - u(8) + stride.armL.x, y - u(20) + stride.armL.y, u(3), u(7), ARM);
-    mark(g, fx + u(5) + stride.armR.x, y - u(20) + stride.armR.y, u(3), u(7), ARM);
-    mark(g, fx - u(3) + stride.face.x, y - u(27), u(6), u(6), WHITE);
-    g.rect(fx - u(3) + stride.face.x, y - u(29), u(6), u(4)).fill({ color: HAIR });
-    g.rect(fx - u(2) + stride.face.x, y - u(25), u(1), u(1)).fill({ color: EYE });
-    g.rect(fx + u(1) + stride.face.x, y - u(25), u(1), u(1)).fill({ color: EYE });
-    if (pose === 'chat') drawHeart(g, fx, y - u(34));
+    const frame = pose === 'walk' ? Math.floor(phase * 8) % 4 : -1;
+    const toward = dirX + dirY > 0;
+    const faceRight = dirX > 0 || (dirX === 0 && dirY < 0);
+    personScale = building ? 1 : 2;
+    drawGuy(g, fx, fy, hair, toward, faceRight, frame, pose === 'sit', pose === 'chat', dirX, dirY);
+    void lit;
   }
 
   function drawArms(g: Graphics, foot: Pt, phase: number): void {
+    const s = personScale;
     const fx = Math.round(foot.x);
     const fy = Math.round(foot.y);
     const type = Math.floor(phase * 6) % 2;
-    g.rect(fx - u(10), fy - u(4) + type, u(5), u(3)).fill({ color: ARM });
-    g.rect(fx + u(5), fy - u(4) + (1 - type), u(5), u(3)).fill({ color: ARM });
-    g.rect(fx - u(9), fy - u(4) + type, u(5), u(1)).fill({ color: WHITE });
-    g.rect(fx + u(5), fy - u(4) + (1 - type), u(5), u(1)).fill({ color: WHITE });
+    const hand = (x: number, y: number) => {
+      g.rect(x, y, 3 * s, 2 * s).fill({ color: NAVY });
+      g.rect(x, y, 3 * s, s).fill({ color: ICE });
+      g.rect(x, y + s, s, s).fill({ color: WHITE });
+    };
+    hand(fx - 5 * s, fy - s + type * s);
+    hand(fx + 2 * s, fy - s + (1 - type) * s);
   }
 
   function drawMonitor(g: Graphics, mx: number, my: number, towardCamera: boolean, lit: boolean, now: number): void {
@@ -840,9 +885,45 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
     void now;
   }
 
+  function paintPoseSheet(): void {
+    world.rect(0, 0, VIEW, VIEW).fill({ color: 0x060910 });
+    const cols: { name: string; dx: number; dy: number; frame: number; pose: 'stand' | 'walk' | 'sit' | 'chat' }[] = [
+      { name: '+X', dx: 1, dy: 0, frame: 0, pose: 'stand' },
+      { name: '-X', dx: -1, dy: 0, frame: 0, pose: 'stand' },
+      { name: '+Y', dx: 0, dy: 1, frame: 0, pose: 'stand' },
+      { name: '-Y', dx: 0, dy: -1, frame: 0, pose: 'stand' },
+      { name: 'W0', dx: 1, dy: 0, frame: 0, pose: 'walk' },
+      { name: 'W1', dx: 1, dy: 0, frame: 1, pose: 'walk' },
+      { name: 'W2', dx: 1, dy: 0, frame: 2, pose: 'walk' },
+      { name: 'W3', dx: 1, dy: 0, frame: 3, pose: 'walk' },
+      { name: 'SIT', dx: 1, dy: 0, frame: 0, pose: 'sit' },
+      { name: 'CHAT', dx: 0, dy: 1, frame: 0, pose: 'chat' },
+    ];
+    const hairs = ['SHORT', 'SPIKY', 'BOB', 'TAIL'];
+    cols.forEach((col, i) => paintText(world, col.name, 24 + i * 52, 28, ICE, 1));
+    for (let hair = 0; hair < 4; hair++) {
+      paintText(world, hairs[hair] ?? '', 4, 78 + hair * 100, WHITE, 1);
+      cols.forEach((col, i) => {
+        const fx = 36 + i * 52;
+        const fy = 110 + hair * 100;
+        personScale = 3;
+        const toward = col.dx + col.dy > 0;
+        const faceRight = col.dx > 0 || (col.dx === 0 && col.dy < 0);
+        const frame = col.pose === 'walk' ? col.frame : 0;
+        drawGuy(world, fx, fy, hair, toward, faceRight, frame, col.pose === 'sit', col.pose === 'chat', col.dx, col.dy);
+        if (col.pose === 'sit') drawArms(world, { x: fx, y: fy }, 0.2);
+      });
+    }
+  }
+
   function rebuild(now: number): void {
     world.clear();
     glow.clear();
+    if (new URLSearchParams(location.search).get('poses') === '1') {
+      paintPoseSheet();
+      app.render();
+      return;
+    }
     for (const sim of sims) {
       originX = sim.originX;
       originY = sim.originY;
@@ -1079,9 +1160,12 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       for (const x of [1, 3, 5]) {
         for (const [y, face] of rows) put('desk', x, y, 2, face);
       }
-      for (const x of [12, 14]) {
+      for (const x of [1, 3, 5]) put('desk', x, 8, 2, -1);
+      for (const x of [8, 10, 12, 14]) {
         put('desk', x, 2, 2, -1);
       }
+      put('desk', 8, 3, 2, -1);
+      put('desk', 10, 3, 2, -1);
       put('file', 11, 7);
       put('desk', 12, 7, 2, -1);
       put('desk', 14, 7, 2, -1);
@@ -1343,12 +1427,13 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
         const oy = atDesk ? person.homeY : person.y;
         const floorPt = iso(ox + across, oy + along, floorZ);
         const foot = atDesk ? raise(floorPt, u(DESK_H) - s(2)) : floorPt;
-        drawPerson(g, foot, person.pose, person.phase, atDesk, person.dirX, person.dirY);
+        drawPerson(g, foot, person.pose, person.phase, atDesk, person.dirX, person.dirY, person.seed % 4);
       });
       if (atDesk) {
         pushDraw(gx, gy, person.face === 1 ? 12 : 5, (g) => {
           const along = person.face === 1 ? 0.72 : 0.28;
           const floorPt = iso(person.homeX + person.span / 2, person.homeY + along, floorZ);
+          personScale = building ? 1 : 2;
           drawArms(g, raise(floorPt, u(DESK_H) - s(2)), person.phase);
         });
       }
