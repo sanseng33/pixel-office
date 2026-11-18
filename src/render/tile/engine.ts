@@ -940,51 +940,58 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
   ): { x: number; y: number; pose: Person['pose']; roam: boolean; face: 1 | -1 }[] {
     if (role === 'lobby') {
       return [
-        { x: 2, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
-        { x: 7, y: 11, pose: 'walk', roam: true, face: 1 },
-        { x: 12, y: 4, pose: 'walk', roam: true, face: 1 },
-        { x: 13, y: 4, pose: 'walk', roam: true, face: 1 },
-        { x: 14, y: 4, pose: 'walk', roam: true, face: 1 },
+        { x: 1, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 7, y: 14, pose: 'walk', roam: true, face: 1 },
+        { x: 7, y: 12, pose: 'walk', roam: true, face: 1 },
+        { x: 13, y: 5, pose: 'walk', roam: true, face: 1 },
+        { x: 14, y: 5, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'lounge') {
       return [
-        { x: 6, y: 11, pose: 'chat', roam: false, face: 1 },
-        { x: 7, y: 11, pose: 'chat', roam: false, face: 1 },
-        { x: 13, y: 4, pose: 'chat', roam: false, face: -1 },
-        { x: 14, y: 4, pose: 'walk', roam: true, face: 1 },
+        { x: 7, y: 13, pose: 'chat', roam: false, face: 1 },
+        { x: 7, y: 12, pose: 'chat', roam: false, face: 1 },
+        { x: 7, y: 10, pose: 'walk', roam: true, face: 1 },
+        { x: 14, y: 5, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'sales') {
       return [
-        { x: 1, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 5, y: 13, pose: 'sit', roam: false, face: -1 },
-        { x: 10, y: 6, pose: 'sit', roam: false, face: -1 },
-        { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
+        { x: 6, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 6, y: 13, pose: 'sit', roam: false, face: -1 },
+        { x: 13, y: 7, pose: 'sit', roam: false, face: -1 },
+        { x: 7, y: 14, pose: 'walk', roam: true, face: 1 },
+        { x: 7, y: 10, pose: 'walk', roam: true, face: 1 },
+        { x: 14, y: 5, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'it') {
       return [
-        { x: 1, y: 9, pose: 'sit', roam: false, face: -1 },
-        { x: 4, y: 9, pose: 'sit', roam: false, face: -1 },
+        { x: 2, y: 9, pose: 'sit', roam: false, face: -1 },
+        { x: 5, y: 9, pose: 'sit', roam: false, face: -1 },
+        { x: 7, y: 14, pose: 'walk', roam: true, face: 1 },
+        { x: 7, y: 11, pose: 'walk', roam: true, face: 1 },
+        { x: 13, y: 5, pose: 'walk', roam: true, face: 1 },
       ];
     }
     if (role === 'vacant') return [];
     if (level <= 5) {
       return [
-        { x: 1, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 5, y: 12, pose: 'sit', roam: false, face: 1 },
-        { x: 10, y: 7, pose: 'sit', roam: false, face: 1 },
-        { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
+        { x: 6, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 6, y: 12, pose: 'sit', roam: false, face: 1 },
+        { x: 13, y: 7, pose: 'sit', roam: false, face: -1 },
+        { x: 7, y: 14, pose: 'walk', roam: true, face: 1 },
+        { x: 7, y: 10, pose: 'walk', roam: true, face: 1 },
+        { x: 12, y: 5, pose: 'walk', roam: true, face: 1 },
       ];
     }
     return [
-        { x: 1, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 5, y: 15, pose: 'sit', roam: false, face: -1 },
-        { x: 7, y: 13, pose: 'sit', roam: false, face: -1 },
-        { x: 10, y: 6, pose: 'sit', roam: false, face: -1 },
-      { x: 6, y: 11, pose: 'walk', roam: true, face: 1 },
+      { x: 6, y: 15, pose: 'sit', roam: false, face: -1 },
+      { x: 6, y: 13, pose: 'sit', roam: false, face: -1 },
+      { x: 13, y: 7, pose: 'sit', roam: false, face: -1 },
+      { x: 7, y: 14, pose: 'walk', roam: true, face: 1 },
+      { x: 7, y: 10, pose: 'walk', roam: true, face: 1 },
+      { x: 14, y: 5, pose: 'walk', roam: true, face: 1 },
     ];
   }
 
@@ -1027,8 +1034,12 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
   }
 
   function isAisle(x: number, y: number): boolean {
-    if (y === 11 && x >= 1 && x <= 8) return true;
-    if (y === 4 && x >= 8 && x <= 15) return true;
+    if (x === 7 && y >= 9 && y <= 15) return true;
+    if (x === 8 && y >= 8 && y <= 10) return true;
+    if (x === 9 && y === 7) return true;
+    if (x === 10 && (y === 7 || y === 6)) return true;
+    if (x === 11 && (y === 6 || y === 5)) return true;
+    if (y === 5 && x >= 12 && x <= 15) return true;
     return false;
   }
 
@@ -1065,64 +1076,81 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
               [13, -1],
               [10, -1],
             ];
-      for (const x of [1, 3, 5, 7]) {
+      for (const x of [1, 3, 5]) {
         for (const [y, face] of rows) put('desk', x, y, 2, face);
       }
-      for (const x of [8, 10, 12, 14]) {
-        put('desk', x, 7, 2, 1);
-        put('desk', x, 6, 2, -1);
+      for (const x of [12, 14]) {
         put('desk', x, 2, 2, -1);
       }
+      put('file', 11, 7);
+      put('desk', 12, 7, 2, -1);
+      put('desk', 14, 7, 2, -1);
+      put('board', 12, 3, 2);
+      put('plant', 15, 4);
+      put('file', 13, 4);
     }
     if (role === 'it') {
-      for (let x = 1; x <= 8; x++) put('rack', x, 15);
-      for (let x = 2; x <= 8; x++) put('rack', x, 14);
-      for (let x = 3; x <= 8; x++) put('rack', x, 13);
-      for (let x = 9; x <= 15; x++) put('rack', x, 7);
-      for (let x = 10; x <= 15; x++) put('rack', x, 6);
-      for (let x = 11; x <= 15; x++) put('rack', x, 5);
+      for (const y of [15, 14, 13]) {
+        for (let x = 1; x <= 6; x++) put('rack', x, y);
+      }
+      for (let x = 12; x <= 15; x++) put('rack', x, 7);
+      for (let x = 13; x <= 15; x++) put('rack', x, 6);
+      for (let x = 12; x <= 14; x++) put('rack', x, 3);
       put('table', 1, 12, 3);
-      put('table', 5, 12, 3);
+      put('table', 4, 12, 3);
       put('table', 1, 10, 3);
-      put('table', 5, 10, 2);
       put('desk', 1, 9, 2, -1);
       put('desk', 4, 9, 2, -1);
     }
     if (role === 'lounge') {
-      for (const x of [1, 4, 6]) {
-        put('sofa', x, 15, 2);
-        put('sofa', x, 13, 2);
-        put('table', x, 12);
-        put('table', x, 10);
-        put('sofa', x, 9, 2);
-      }
-      put('shelf', 1, 8, 2);
-      put('coffee', 9, 6, 2);
+      put('sofa', 1, 15, 2);
+      put('sofa', 4, 15, 2);
+      put('table', 3, 14);
+      put('sofa', 1, 13, 2);
+      put('sofa', 4, 13, 2);
+      put('table', 6, 12);
+      put('shelf', 1, 10, 2);
+      put('plant', 6, 15);
+      put('plant', 6, 10);
       put('coffee', 12, 6, 2);
-      put('pong', 13, 2, 3);
-      for (const x of [8, 10, 14]) {
-        put('sofa', x, 7, 2);
-        put('table', x, 5);
-        put('sofa', x, 3, 2);
-      }
+      put('coffee', 14, 3, 2);
+      put('pong', 12, 2, 3);
+      put('sofa', 12, 7, 2);
+      put('table', 14, 7);
+      put('table', 15, 6);
+      put('sofa', 13, 3, 2);
+      put('plant', 11, 7);
+      put('plant', 15, 4);
     }
     if (role === 'lobby') {
-      put('desk', 2, 15, 3, -1);
-      put('gate', 1, 14);
-      put('gate', 7, 14);
+      put('desk', 1, 15, 3, -1);
+      put('gate', 5, 14);
+      put('gate', 6, 13);
       put('sofa', 1, 13, 2);
-      put('sofa', 5, 13, 2);
-      put('sofa', 1, 12, 2);
-      put('sofa', 6, 12, 2);
-      put('table', 4, 10);
-      put('screen', 9, 7, 2);
+      put('sofa', 4, 13, 2);
+      put('table', 3, 12);
+      put('sofa', 1, 10, 2);
+      put('plant', 6, 15);
+      put('plant', 4, 10);
       put('screen', 12, 7, 2);
-      put('screen', 14, 5, 2);
-      put('screen', 10, 2, 2);
-      put('sofa', 8, 6, 2);
-      put('sofa', 13, 2, 2);
-      put('plant', 6, 10);
-      put('plant', 8, 15);
+      put('screen', 14, 7, 2);
+      put('screen', 14, 6, 2);
+      put('screen', 12, 3, 2);
+      put('sofa', 14, 3, 2);
+      put('plant', 11, 7);
+      put('plant', 15, 4);
+    }
+    for (let y = 2; y <= 7; y++) {
+      for (let x = 11; x <= 15; x++) {
+        if (!seen(x, y)) continue;
+        if (role === 'it') put('rack', x, y);
+        else if (role === 'vacant') put((x + y) % 2 === 0 ? 'box' : 'marker', x, y);
+        else if (role === 'lounge') put(x % 2 === 0 ? 'table' : 'plant', x, y);
+        else if (role === 'lobby') {
+          if (!put('screen', x, y, 2)) put('plant', x, y);
+        }
+        else put(x % 2 === 0 ? 'file' : 'plant', x, y);
+      }
     }
     const filler: Furn['kind'][] =
       role === 'rnd'
@@ -1170,14 +1198,6 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
       }
       if (!placed) break;
     }
-    if (role === 'lounge' || role === 'lobby') {
-      for (let y = 1; y <= 15; y++) {
-        for (let x = 1; x <= 15; x++) {
-          if (!seen(x, y) || (x + y) % 2 !== 0) continue;
-          put(role === 'lounge' ? 'plant' : 'plant', x, y);
-        }
-      }
-    }
     if (role === 'vacant') {
       for (let y = 1; y <= 15; y++) {
         for (let x = 1; x <= 15; x++) {
@@ -1199,7 +1219,7 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
         if (towerSolid(tile.x, tile.y)) block.add(`${tile.x},${tile.y}`);
       }
     }
-    const chat = (role === 'lounge' ? [{ x: 3, y: 14 }, { x: 8, y: 13 }, { x: 9, y: 7 }] : []).filter(
+    const chat = (role === 'vacant' ? [] : [{ x: 7, y: 13 }, { x: 7, y: 12 }, { x: 13, y: 5 }, { x: 14, y: 5 }]).filter(
       (c) => notchOpen(c.x, c.y) && !block.has(`${c.x},${c.y}`),
     );
     return {
@@ -1441,12 +1461,26 @@ function mark(g: Graphics, x: number, y: number, w: number, h: number, fill: num
     const atHome = person.x === person.homeX && person.y === person.homeY;
     const chatting = layout.chat.some((c) => c.x === person.x && c.y === person.y);
     if (person.roam) {
+      if (chatting) {
+        const friend = people.find(
+          (other) => other !== person && other.roam && other.pose !== 'sit' && Math.abs(other.x - person.x) + Math.abs(other.y - person.y) <= 1.2,
+        );
+        if (friend) {
+          person.pose = 'chat';
+          friend.pose = 'chat';
+          person.path = [];
+          friend.path = [];
+          person.timer = 2.4;
+          friend.timer = 2.4;
+          return;
+        }
+      }
       const goal = pickGoal(person, people);
       const path = route(layout, { x: person.x, y: person.y }, goal);
       person.path = path.slice(1);
       person.hop = 0;
       person.pose = 'walk';
-      if (person.path.length === 0) person.timer = 0.6;
+      if (person.path.length === 0) person.timer = 0.4;
       return;
     }
     if (atHome) {
