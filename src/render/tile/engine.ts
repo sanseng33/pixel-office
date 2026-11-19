@@ -764,14 +764,23 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     g.rect(hx + u(3), hy - u(8), u(1), u(6)).fill({ color: ICE });
   }
 
-  function drawFurn(g: Graphics, item: Furn, now: number): void {
+  function drawFurn(g: Graphics, item: Furn, now: number, meeting = false): void {
     if (item.kind === 'desk') {
       drawDesk(g, item);
       return;
     }
     if (item.kind === 'table') {
       const [a, b, c, d] = corners(item.x + 0.08, item.y + 0.22, item.x + item.w - 0.08, item.y + 0.78, floorZ);
-      volume(g, a, b, c, d, u(3), u(9));
+      if (meeting && item.w === 2) {
+        // Open space beneath a thin top makes the 5F meeting piece read as a table.
+        for (const p of [a, b, c, d]) {
+          const top = raise(p, u(6));
+          g.rect(Math.round(p.x), Math.round(top.y), u(1), Math.max(1, Math.round(p.y - top.y))).fill({ color: ICE });
+        }
+        volume(g, a, b, c, d, u(6), u(7));
+      } else {
+        volume(g, a, b, c, d, u(3), u(9));
+      }
       return;
     }
     if (item.kind === 'plant') {
@@ -925,6 +934,23 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       g.rect(Math.round(mid.x) - u(4), Math.round(mid.y) + u(3), u(8), u(1)).fill({ color: WHITE });
       return;
     }
+    if (item.kind === 'chairs' && meeting) {
+      for (let i = 0; i < item.w; i++) {
+        const x = item.x + i + 0.5;
+        const y = item.y + 0.5;
+        const seat = iso(x, y, floorZ);
+        const back = iso(x, item.y + (item.y > gridN - 3 ? 0.72 : 0.28), floorZ);
+        const [a, b, c, d] = corners(x - 0.2, y - 0.17, x + 0.2, y + 0.17, floorZ);
+        for (const p of [a, c]) {
+          g.rect(Math.round(p.x), Math.round(p.y) - u(3), u(1), u(3)).fill({ color: ICE });
+        }
+        poly(g, [raise(a, u(3)), raise(b, u(3)), raise(c, u(3)), raise(d, u(3))], INK, 1, WHITE, 1);
+        g.rect(Math.round(back.x) - u(2), Math.round(back.y) - u(8), u(4), u(3)).fill({ color: ICE });
+        g.rect(Math.round(back.x) - u(2), Math.round(back.y) - u(8), u(4), u(1)).fill({ color: WHITE });
+        void seat;
+      }
+      return;
+    }
     if (item.kind === 'chairs') {
       const base = iso(item.x + 0.5, item.y + 0.5, floorZ);
       const x = Math.round(base.x);
@@ -986,16 +1012,16 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     const fill = (x: number, r: number, w: number, h: number, color: number) => {
       g.rect(fx + x * p, fy - (r + h) * p, w * p, h * p).fill({ color });
     };
-    // Compact pixel-office figure (~24 fine px): 6-row legs, 7-row torso, 7-row head. Dark outline, no glow.
+    // Compact pixel-office figure (~26 fine px): 6-row legs, 8-row torso, 8-row head. Dark outline, readable features.
     const side = faceRight ? 1 : -1;
     const shirt = SHIRT[hair % SHIRT.length] ?? SHIRT[0];
     const walking = frame >= 0;
-    const stride = !walking ? 0 : frame === 0 ? 2 : frame === 2 ? -2 : 0;
+    const stride = !walking ? 0 : frame === 0 ? 3 : frame === 1 ? 1 : frame === 2 ? -3 : -1;
     const lean = dirX - dirY;
     const off = stride * (lean === 0 ? 1 : Math.sign(lean));
     const sitDrop = seated ? 4 : 0;
     if (!seated) {
-      // Scissor walk: legs slant from hip, feet split; torso height never changes.
+      // Scissor walk: legs slant from hip, feet split; wider stride for clarity.
       for (const [hip, o] of [
         [-3, off],
         [1, -off],
@@ -1003,6 +1029,8 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         for (let r = 1; r < 7; r++) {
           const x = hip + Math.round((o * (7 - r)) / 6);
           fill(x, r, 2, 1, PANTS);
+          if (r === 1 || r === 6) fill(x - 1, r, 1, 1, INK);
+          if (r === 1 || r === 6) fill(x + 2, r, 1, 1, INK);
         }
         const foot = hip + o;
         fill(foot - (side < 0 ? 1 : 0), 0, 3, 1, NAVY);
@@ -1011,6 +1039,8 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       // Thighs forward onto the chair seat; shins hidden by the desk.
       fill(-3, 3, 6, 2, PANTS);
       fill(side > 0 ? 1 : -4, 1, 3, 2, PANTS);
+      fill(-4, 3, 1, 2, INK);
+      fill(3, 3, 1, 2, INK);
     }
     const r0 = 7 - sitDrop;
     // Torso: shoulders wider than waist, belt line, collar.
@@ -1035,40 +1065,57 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       fill(-6, r0 + 3, 2, 4, shirt);
       fill(4, r0 + 3, 2, 4, shirt);
     }
-    // Neck, head, hair.
+    // Neck, head, hair with distinct silhouettes.
     const h0 = r0 + 7;
     fill(-1, h0, 2, 1, SKIN);
-    fill(-3, h0 + 1, 6, 5, toward ? SKIN : NAVY);
-    fill(-4, h0 + 2, 1, 3, INK);
-    fill(3, h0 + 2, 1, 3, INK);
+    fill(-3, h0 + 1, 6, 6, toward ? SKIN : NAVY);
+    fill(-4, h0 + 2, 1, 4, INK);
+    fill(3, h0 + 2, 1, 4, INK);
     if (toward) {
       const look = side > 0 ? 1 : 0;
-      fill(-2 + look, h0 + 3, 1, 1, INK);
-      fill(1 + look, h0 + 3, 1, 1, INK);
+      fill(-2 + look, h0 + 3, 1, 2, INK);
+      fill(1 + look, h0 + 3, 1, 2, INK);
+      fill(-1, h0 + 2, 2, 1, DIM);
     }
-    fill(-3, h0 + 5, 6, 2, NAVY);
-    fill(-4, h0 + 4, 1, 2, NAVY);
-    fill(3, h0 + 4, 1, 2, NAVY);
-    fill(-2, h0 + 6, 3, 1, DIM);
-    if (hair === 1) fill(-3, h0 + 7, 5, 1, NAVY);
-    else if (hair === 2) {
-      fill(-4, h0 + 1, 1, 4, NAVY);
-      fill(3, h0 + 1, 1, 4, NAVY);
-    } else if (hair === 3) fill((toward ? -side : side) > 0 ? 4 : -5, h0 + 2, 1, 4, NAVY);
-    if (!toward) fill(-3, h0 + 1, 6, 4, NAVY);
+    fill(-3, h0 + 6, 6, 2, NAVY);
+    fill(-4, h0 + 5, 1, 2, NAVY);
+    fill(3, h0 + 5, 1, 2, NAVY);
+    fill(-2, h0 + 7, 3, 1, DIM);
+    // Hair: distinct styles, readable in silhouette (SHORT/SPIKY/BOB/TAIL).
+    if (hair === 1) {
+      fill(-3, h0 + 8, 6, 1, NAVY);
+      fill(-2, h0 + 8, 1, 1, DIM);
+      fill(0, h0 + 8, 1, 2, NAVY);
+      fill(1, h0 + 8, 1, 1, DIM);
+    } else if (hair === 2) {
+      fill(-5, h0 + 1, 1, 5, NAVY);
+      fill(4, h0 + 1, 1, 5, NAVY);
+      fill(-3, h0 + 8, 6, 1, NAVY);
+    } else if (hair === 3) {
+      const tailSide = (toward ? -side : side) > 0 ? 4 : -5;
+      fill(tailSide, h0 + 2, 1, 5, NAVY);
+      fill(tailSide + (tailSide > 0 ? 1 : -1), h0 + 4, 1, 2, NAVY);
+      fill(-3, h0 + 7, 6, 1, NAVY);
+    } else {
+      fill(-3, h0 + 7, 6, 1, NAVY);
+    }
+    if (!toward) fill(-3, h0 + 1, 6, 5, NAVY);
     if (chat) drawHeart(g, fx, fy - (h0 + 11) * p);
   }
 
   function drawHandsFine(g: Graphics, foot: Pt, phase: number): void {
     const p = personScale / HD;
     const tap = Math.floor(phase * 6) % 2;
-    for (const [x, up] of [
-      [-6, tap],
-      [3, 1 - tap],
-    ] as const) {
-      g.rect(foot.x + (x - 1) * p, foot.y - (15 + up) * p, 4 * p, 3 * p).fill({ color: INK });
-      g.rect(foot.x + x * p, foot.y - (14 + up) * p, 2 * p, 1 * p).fill({ color: SKIN });
-    }
+    // Left hand
+    g.rect(foot.x + (-7) * p, foot.y - (15 + tap) * p, 1 * p, 4 * p).fill({ color: INK });
+    g.rect(foot.x + (-6) * p, foot.y - (15 + tap) * p, 3 * p, 1 * p).fill({ color: SKIN });
+    g.rect(foot.x + (-6) * p, foot.y - (14 + tap) * p, 3 * p, 3 * p).fill({ color: SKIN });
+    g.rect(foot.x + (-6) * p, foot.y - (11 + tap) * p, 1 * p, 1 * p).fill({ color: WHITE });
+    // Right hand
+    g.rect(foot.x + (4) * p, foot.y - (15 + (1 - tap)) * p, 1 * p, 4 * p).fill({ color: INK });
+    g.rect(foot.x + (3) * p, foot.y - (15 + (1 - tap)) * p, 3 * p, 1 * p).fill({ color: SKIN });
+    g.rect(foot.x + (3) * p, foot.y - (14 + (1 - tap)) * p, 3 * p, 3 * p).fill({ color: SKIN });
+    g.rect(foot.x + (5) * p, foot.y - (11 + (1 - tap)) * p, 1 * p, 1 * p).fill({ color: WHITE });
   }
 
   function drawMonitorFine(g: Graphics, mx: number, my: number, towardCamera: boolean, lit: boolean, now: number): void {
@@ -1346,14 +1393,14 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       ];
     }
     if (role === 'vacant') return [];
-    if (level <= 5) {
+    if (level === 5) {
       return [
-        { x: 6, y: 15, pose: 'sit', roam: false, face: -1 },
+        { x: 2, y: 15, pose: 'sit', roam: false, face: 1 },
+        { x: 4, y: 15, pose: 'sit', roam: false, face: 1 },
+        { x: 6, y: 15, pose: 'sit', roam: false, face: 1 },
         { x: 6, y: 12, pose: 'sit', roam: false, face: 1 },
+        { x: 11, y: 7, pose: 'sit', roam: false, face: -1 },
         { x: 13, y: 7, pose: 'sit', roam: false, face: -1 },
-        { x: 7, y: 14, pose: 'walk', roam: true, face: 1 },
-        { x: 7, y: 10, pose: 'walk', roam: true, face: 1 },
-        { x: 12, y: 5, pose: 'walk', roam: true, face: 1 },
       ];
     }
     return [
@@ -1419,13 +1466,17 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
   function stackAccents(role: FloorType, level = 7): Furn[] {
     const items: Furn[] = [];
     const blocked = new Set<string>();
+    // The original L-shaped reservation has a diagonal step at (9,9)→(10,8).
+    // Reserve the orthogonal connector on every plate-B floor.
+    const aisle = (x: number, y: number) =>
+      isAisle(x, y) || (SHIFT > 0 && x === 10 && y === 9);
     const mark = (item: Furn) => {
       for (const t of footprintTiles(item)) blocked.add(`${t.x},${t.y}`);
     };
     const put = (kind: Furn['kind'], x: number, y: number, w = 1, face: 1 | -1 = 1): boolean => {
       const item: Furn = { kind, x: x + SHIFT, y: y + SHIFT, w, face };
       const cells = footprintTiles(item);
-      if (cells.some((t) => !inPlate(t.x, t.y) || blocked.has(`${t.x},${t.y}`) || isAisle(t.x, t.y))) return false;
+      if (cells.some((t) => !inPlate(t.x, t.y) || blocked.has(`${t.x},${t.y}`) || aisle(t.x, t.y))) return false;
       items.push(item);
       mark(item);
       return true;
@@ -1433,10 +1484,13 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     // Grid scans below use absolute tile coords; put() takes baseline coords and adds SHIFT.
     const putAt = (kind: Furn['kind'], x: number, y: number, w = 1, face: 1 | -1 = 1): boolean =>
       put(kind, x - SHIFT, y - SHIFT, w, face);
-    const seen = (x: number, y: number) => visibleTile(x, y) && !blocked.has(`${x},${y}`) && !isAisle(x, y);
+    const seen = (x: number, y: number) => visibleTile(x, y) && !blocked.has(`${x},${y}`) && !aisle(x, y);
     if (role === 'rnd' && level === 5 && SHIFT > 0) {
-      // Reserve the front-left meeting area before the baseline desk rows fill it.
-      putAt('booth', 3, gridN - 3);
+      // Reserve the front-left meeting area: table with chairs around it.
+      putAt('table', 3, gridN - 3, 2);
+      putAt('chairs', 3, gridN - 2, 2);
+      putAt('chairs', 2, gridN - 3, 1);
+      putAt('chairs', 5, gridN - 3, 1);
     }
     if (role === 'sales') {
       put('room', 3, 12, 2);
@@ -1465,12 +1519,12 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       }
       put('desk', 8, 3, 2, -1);
       put('desk', 10, 3, 2, -1);
-      put('file', 11, 7);
+      put(role === 'rnd' && level === 5 && SHIFT > 0 ? 'plant' : 'file', 11, 7);
       put('desk', 12, 7, 2, -1);
       put('desk', 14, 7, 2, -1);
       put('board', 12, 3, 2);
       put('plant', 15, 4);
-      put('file', 13, 4);
+      put(role === 'rnd' && level === 5 && SHIFT > 0 ? 'plant' : 'file', 13, 4);
     }
     if (role === 'it') {
       for (const y of [15, 14, 13]) {
@@ -1528,45 +1582,54 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     if (SHIFT > 0) {
       const edge = gridN - 2;
       if (role === 'rnd' && level === 5) {
-        // 5F front row: workstations facing outward, meeting booth (already placed), plants.
-        // Front edge (y=edge, camera-facing): place desks and meeting areas.
-        // Coordinates must stay inside the visible L (not in the cutout x>=10, y>=10).
-        for (let x = 2; x <= 6; x += 2) {
-          putAt('desk', x, edge - 1, 2, 1);
-        }
-        // The L cutout begins at x=10, so only the left wing has a front edge here.
+        // Front row: workstations facing forward, clear of the aisle.
+        for (const x of [2, 4, 6]) putAt('desk', x, edge - 1, 2, 1);
         putAt('plant', 2, edge);
         putAt('plant', 7, edge);
-        // Left edge (x=1): plants and occasional desk.
+        // Left edge: workstation rhythm with plants; preserve the L-shaped aisle.
         for (let y = 3; y <= 15; y++) {
-          if (seen(1, y)) {
-            if (y === 8 || y === 12) putAt('plant', 1, y);
-            else if (y % 4 === 1 && y > 4) putAt('desk', 1, y, 1, -1);
-            else if ((y + 1) % 3 === 0) putAt('plant', 1, y);
-          }
+          if (!seen(1, y)) continue;
+          if ([5, 9, 13].includes(y)) putAt('desk', 1, y, 1, -1);
+          else if ([7, 11, 15].includes(y)) putAt('plant', 1, y);
         }
-        // Right edge (x=edge): similar treatment, only visible tiles.
-        for (let y = 3; y <= 8; y++) {
-          if (seen(edge, y)) {
-            if (y % 3 === 0) putAt('plant', edge, y);
-            else if (y % 4 === 2) putAt('file', edge, y);
-          }
-        }
+        // Right-facing front corner: workstations and plants only, no file/box storage.
+        for (const y of [3, 5, 7]) if (seen(edge, y)) putAt('plant', edge, y);
+        for (const y of [4, 6]) if (seen(edge - 1, y)) putAt('desk', edge - 1, y, 2, -1);
       } else {
-        // Other floors keep the plate-B baseline furnishings; the detailed prototype is 5F-only.
+        // Other floors: use appropriate furniture for each floor type, avoiding file/box piles.
         const strip: Pt[] = [];
         for (let y = 1; y <= edge; y++) strip.push({ x: 1, y });
         for (let x = 1; x <= edge; x++) strip.push({ x, y: edge });
         for (let y = 1; y <= edge; y++) strip.push({ x: edge, y });
         for (const t of strip) {
           if (!seen(t.x, t.y)) continue;
-          if (role === 'rnd' || role === 'sales') {
+          if (role === 'rnd') {
+            // 7F R&D: workstations with plants, same readability as 5F but different arrangement
             if (t.y === edge && t.x % 2 === 0 && putAt('desk', t.x, t.y - 1, 2, 1)) continue;
-            putAt((t.x + t.y) % 3 === 0 ? 'plant' : 'file', t.x, t.y);
-          } else if (role === 'it') putAt('rack', t.x, t.y);
-          else if (role === 'vacant') putAt((t.x + t.y) % 2 === 0 ? 'box' : 'chairs', t.x, t.y);
-          else if (role === 'lounge') putAt((t.x + t.y) % 2 === 0 ? 'plant' : 'table', t.x, t.y);
-          else putAt((t.x + t.y) % 2 === 0 ? 'plant' : 'screen', t.x, t.y);
+            putAt((t.x + t.y) % 3 === 0 ? 'plant' : (t.x + t.y) % 2 === 0 ? 'desk' : 'plant', t.x, t.y);
+          } else if (role === 'sales') {
+            // 3F sales: workstations with plants, clear front strip
+            if (t.y === edge && t.x % 2 === 0 && putAt('desk', t.x, t.y - 1, 2, 1)) continue;
+            putAt((t.x + t.y) % 3 === 0 ? 'plant' : 'desk', t.x, t.y);
+          } else if (role === 'it') {
+            // 4F IT: keep server racks (real infrastructure), not file boxes
+            putAt('rack', t.x, t.y);
+          } else if (role === 'vacant') {
+            // 6F vacant: sparse, a few leftover items, not packed with boxes
+            if ((t.x + t.y) % 5 === 0) putAt('marker', t.x, t.y);
+            else if ((t.x * 3 + t.y * 2) % 7 === 0) putAt('chairs', t.x, t.y);
+          } else if (role === 'lounge') {
+            // 2F lounge: sofas, tables, plants - casual furniture. Fewer items, larger distinct pieces, open path.
+            if ((t.x + t.y) % 4 === 0) putAt('sofa', t.x, t.y, 2);
+            else if ((t.x + t.y) % 3 === 0) putAt('table', t.x, t.y);
+            else putAt('plant', t.x, t.y);
+          } else {
+            // 1F lobby: reception desk, screens, seats, plants. Open entrance, circulation path, no dense cubes.
+            if (t.x === 1 && t.y === edge) putAt('desk', t.x, t.y, 3, -1); // reception desk
+            else if ((t.x + t.y) % 3 === 0) putAt('screen', t.x, t.y, 2);
+            else if ((t.x + t.y) % 2 === 0) putAt('sofa', t.x, t.y, 2);
+            else putAt('plant', t.x, t.y);
+          }
         }
       }
     }
@@ -1574,26 +1637,33 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       for (let x = 11 + SHIFT; x <= 15 + SHIFT; x++) {
         if (!seen(x, y)) continue;
         if (role === 'it') putAt('rack', x, y);
-        else if (role === 'vacant') putAt((x + y) % 2 === 0 ? 'box' : 'marker', x, y);
+        else if (role === 'vacant') {
+          if (SHIFT === 0) putAt((x + y) % 2 === 0 ? 'box' : 'marker', x, y);
+          else if ((x * 2 + y) % 7 === 0) putAt('marker', x, y);
+        }
         else if (role === 'lounge') putAt(x % 2 === 0 ? 'table' : 'plant', x, y);
         else if (role === 'lobby') {
           if (!putAt('screen', x, y, 2)) putAt('plant', x, y);
         }
-        else putAt(x % 2 === 0 ? 'file' : 'plant', x, y);
+        else if (SHIFT > 0 && role === 'rnd' && level !== 5) putAt(x % 2 === 0 ? 'plant' : 'desk', x, y);
+        else if (SHIFT > 0 && role === 'sales') putAt(x % 2 === 0 ? 'plant' : 'desk', x, y);
+        else putAt(role === 'rnd' && level === 5 && SHIFT > 0 ? 'plant' : x % 2 === 0 ? 'file' : 'plant', x, y);
       }
     }
     const filler: Furn['kind'][] =
       role === 'rnd'
-        ? ['file', 'plant', 'plant', 'file']
+        ? (level === 5 && SHIFT > 0 ? ['plant', 'plant', 'plant', 'plant'] : SHIFT > 0 ? ['plant', 'desk', 'plant', 'plant'] : ['file', 'plant', 'plant', 'file'])
         : role === 'sales'
-          ? ['plant', 'file', 'plant']
+          ? (SHIFT > 0 ? ['plant', 'desk', 'plant'] : ['plant', 'file', 'plant'])
           : role === 'it'
-            ? ['plant', 'file', 'table']
+            ? (SHIFT > 0 ? ['plant', 'rack', 'table'] : ['plant', 'file', 'table'])
             : role === 'lounge'
-              ? ['plant', 'table', 'plant']
+              ? (SHIFT > 0 ? ['plant', 'table', 'sofa'] : ['plant', 'table', 'plant'])
               : role === 'lobby'
-                ? ['plant', 'table', 'plant']
-                : ['box', 'marker', 'chairs', 'box'];
+                ? (SHIFT > 0 ? ['plant', 'screen', 'plant', 'sofa'] : ['plant', 'table', 'plant'])
+                : SHIFT > 0
+                  ? ['marker', 'marker', 'marker', 'marker']
+                  : ['box', 'marker', 'chairs', 'box'];
     const holeAt = (x: number, y: number) => {
       for (let yy = y - 2; yy <= y; yy++) {
         for (let xx = x - 2; xx <= x; xx++) {
@@ -1602,7 +1672,7 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
             for (let i = 0; i < 3; i++) {
               const tx = xx + i;
               const ty = yy + j;
-              if (!visibleTile(tx, ty) || isAisle(tx, ty) || blocked.has(`${tx},${ty}`)) {
+              if (!visibleTile(tx, ty) || aisle(tx, ty) || blocked.has(`${tx},${ty}`)) {
                 empty = false;
                 break;
               }
@@ -1629,12 +1699,15 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       if (!placed) break;
     }
     if (role === 'vacant') {
-      for (let y = 1; y <= gridN - 2; y++) {
-        for (let x = 1; x <= gridN - 2; x++) {
-          if (!seen(x, y) || (x * 2 + y) % 3 !== 0) continue;
-          putAt((x + y) % 3 === 0 ? 'chairs' : 'box', x, y);
+      if (SHIFT === 0) {
+        for (let y = 1; y <= gridN - 2; y++) {
+          for (let x = 1; x <= gridN - 2; x++) {
+            if (!seen(x, y) || (x * 2 + y) % 3 !== 0) continue;
+            putAt((x + y) % 3 === 0 ? 'chairs' : 'box', x, y);
+          }
         }
       }
+      // Plate-B vacant: intentionally sparse, no dense box packing
     }
     return items;
   }
@@ -1759,7 +1832,7 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         }
         continue;
       }
-      pushDraw(frontX, item.y, item.kind === 'room' || item.kind === 'booth' ? 11 : 6, furnish((g) => drawFurn(g, item, now)));
+      pushDraw(frontX, item.y, item.kind === 'room' || item.kind === 'booth' ? 11 : 6, furnish((g) => drawFurn(g, item, now, building && SHIFT > 0 && sim.cfg.level === 5)));
     }
     for (const person of people) {
       if (building && !towerSolid(Math.round(person.x), Math.round(person.y))) continue;
