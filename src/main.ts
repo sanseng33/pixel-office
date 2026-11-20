@@ -135,7 +135,7 @@ function setupFloorHover(): void {
   overlay.innerHTML = `
     <svg aria-hidden="true">
       <polyline class="guide-line" points="" />
-      <circle class="guide-dot" r="2.5" cx="0" cy="0" />
+      <circle class="guide-dot" r="3.5" cx="0" cy="0" />
     </svg>
     <article class="card" hidden>
       <div class="card-kicker"></div>
@@ -157,8 +157,8 @@ function setupFloorHover(): void {
   const fillCard = (level: number): void => {
     const intro = introFor(level);
     if (!intro) return;
-    kicker.textContent = `${intro.label}  ·  ${intro.name}`;
-    title.textContent = intro.title;
+    kicker.textContent = `${intro.label}  ·  楼层介绍`;
+    title.textContent = intro.name;
     body.textContent = intro.body;
     shownCard = level;
   };
@@ -173,28 +173,37 @@ function setupFloorHover(): void {
     const scaleY = cr.height / size.height;
     const ax = cr.left - hr.left + anchor.x * scaleX;
     const ay = cr.top - hr.top + anchor.y * scaleY;
-    const labelLeft = cr.left - hr.left + Math.min(anchor.labelX, 16) * scaleX;
+    const labelBoxes = anchor.labels ?? [{ x: anchor.labelX, y: anchor.labelY, w: anchor.labelW ?? 0, h: anchor.labelH ?? 16 }];
+    const minLabelLeft = Math.min(...labelBoxes.map((box) => cr.left - hr.left + box.x * scaleX));
     const gutter = cr.left - hr.left;
     const topGutter = cr.top - hr.top;
-    const pad = 12;
-    const limit = Math.min(labelLeft - 8, gutter - 6);
-    let width = Math.min(260, Math.max(140, gutter - pad * 2));
+    const pad = 16;
+    const limit = minLabelLeft - 16;
+    let width = Math.min(340, Math.max(220, Math.min(320, gutter + 200)));
     let left = pad;
     let top = pad;
-    if (gutter >= 148) {
-      if (left + width > limit) width = Math.max(120, limit - left);
+    if (limit - left >= 200) {
+      width = Math.min(340, Math.max(220, limit - left));
       card.style.width = `${Math.round(width)}px`;
-      const height = card.offsetHeight || 120;
+      card.style.minWidth = `${Math.round(width)}px`;
+      const height = card.offsetHeight || 160;
       top = Math.max(pad, Math.min(ay - height / 2, hr.height - height - pad));
     } else if (topGutter >= 88) {
-      width = Math.min(280, Math.max(160, hr.width - pad * 2));
+      width = Math.min(340, Math.max(200, hr.width - pad * 2));
       card.style.width = `${Math.round(width)}px`;
+      card.style.minWidth = `${Math.round(width)}px`;
       top = Math.max(pad, Math.min(pad, topGutter - pad - (card.offsetHeight || 80)));
     } else {
-      width = Math.max(110, Math.min(width, Math.max(96, limit - pad)));
+      width = Math.max(160, Math.min(width, Math.max(140, limit - left)));
       card.style.width = `${Math.round(width)}px`;
-      const height = card.offsetHeight || 120;
+      card.style.minWidth = `${Math.round(width)}px`;
+      const height = card.offsetHeight || 160;
       top = Math.max(pad, Math.min(ay - height / 2, hr.height - height - pad));
+    }
+    if (left + width > limit) {
+      width = Math.max(140, limit - left);
+      card.style.width = `${Math.round(width)}px`;
+      card.style.minWidth = `${Math.round(width)}px`;
     }
     card.style.left = `${Math.round(left)}px`;
     card.style.top = `${Math.round(top)}px`;

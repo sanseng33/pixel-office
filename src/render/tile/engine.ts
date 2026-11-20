@@ -1,6 +1,32 @@
-import { Application, Graphics } from 'pixi.js';
+import { Application, Assets, Container, Graphics, Sprite, Text } from 'pixi.js';
 import type { FloorConfig, FloorType } from '../../config/floors.ts';
 import { VIEW } from '../../config/display.ts';
+import {
+  AC_UNITS,
+  FLOOR_LABEL_FILL,
+  FLOOR_LABEL_FONT_FAMILY,
+  FLOOR_LABEL_LIP_GAP,
+  FLOOR_LABEL_LIT,
+  FLOOR_LABEL_MIN_X,
+  FLOOR_LABEL_SIZE,
+  FLOOR_LABEL_STROKE,
+  FLOOR_LABEL_STROKE_COLOR,
+  MASCOT_H,
+  MASCOT_TILE,
+  MASCOT_W,
+  SIGN_BOX_H,
+  SIGN_BOX_OFFSET_X,
+  SIGN_BOX_W,
+  SIGN_POST_H,
+  SIGN_POST_LEFT,
+  SIGN_POST_RIGHT,
+  SIGN_TILE,
+  TOWER_BASE_W,
+  TOWER_FRAME_H,
+  TOWER_FRAME_W,
+  floorLabelText,
+  measureFloorLabel,
+} from '../../config/labels.ts';
 import type { OfficeEvent, OfficeEventType } from '../../events/source.ts';
 import type { PlateView } from '../plate.ts';
 import { PLAN, layoutFor } from './layout.ts';
@@ -200,11 +226,10 @@ export async function createTileFloor(
   const debug = options?.debug === true;
   let roofGap = 0;
   let storeyStep = 44;
-  // Logical height stays 600 so the tower keeps its storey/roof layout. Width
-  // is 640 to hold 2× floor labels on the left and a right-edge elevator
-  // without shrinking the building. Do not scale the tower back down.
-  const frameW = building ? 640 : VIEW;
-  const frameH = building ? 600 : VIEW;
+  // Logical canvas 820×640 holds 16px Chinese labels and a wide intro card
+  // without shrinking the 52px tower. 16:9 / 16:10 desktops stay height-limited.
+  const frameW = building ? TOWER_FRAME_W : VIEW;
+  const frameH = building ? TOWER_FRAME_H : VIEW;
   const resW = frameW * HD;
   const resH = frameH * HD;
 
@@ -228,8 +253,32 @@ export async function createTileFloor(
   glow.blendMode = 'add';
   world.scale.set(HD);
   glow.scale.set(HD);
+  const overlay = new Container();
+  const labelLayer = new Container();
+  overlay.scale.set(HD);
+  labelLayer.scale.set(HD);
   app.stage.addChild(world);
+  app.stage.addChild(overlay);
   app.stage.addChild(glow);
+  app.stage.addChild(labelLayer);
+  let mascotSprite: Sprite | null = null;
+  const mascotSrc = `${import.meta.env.BASE_URL}assets/mascot-3d.png`;
+  try {
+    const mascotTex = await Assets.load(mascotSrc);
+    const source = mascotTex.source ?? mascotTex;
+    if (source && 'scaleMode' in source) source.scaleMode = 'nearest';
+    mascotSprite = new Sprite(mascotTex);
+    mascotSprite.anchor.set(0.5, 1);
+    mascotSprite.width = MASCOT_W;
+    mascotSprite.height = MASCOT_H;
+    mascotSprite.roundPixels = true;
+    mascotSprite.visible = false;
+    overlay.addChild(mascotSprite);
+  } catch {
+    mascotSprite = null;
+  }
+  const floorLabelViews: { level: number; text: Text }[] = [];
+  let headerView: Text | null = null;
 
   const wrap = document.createElement('div');
   wrap.style.lineHeight = '0';
@@ -426,16 +475,16 @@ export async function createTileFloor(
     const floorsN = shownList.length;
     const totalH = (plateBottom - plateTop) + storeyStep * (floorsN - 1) + roofGap + wallOver + 8;
     const top = Math.max(16, Math.round((frameH - totalH) / 2));
-    // Place the tower as in the 600-wide canvas, then shift right only as
-    // needed so 2× labels fit in the left gutter. Do not recenter in the
-    // wider frame (that would shrink the tower or steal the right shaft).
-    let originX0 = Math.round((600 - (plateRight - plateLeft)) / 2 - plateLeft);
-    if (originX0 + plateRight > 600 - 6) originX0 = Math.round(600 - 6 - plateRight);
+    // Place the tower as in the historical 600-wide canvas, then shift right
+    // so 16px Chinese labels and a wide intro card fit. Do not rescale the tower.
+    let originX0 = Math.round((TOWER_BASE_W - (plateRight - plateLeft)) / 2 - plateLeft);
+    if (originX0 + plateRight > TOWER_BASE_W - 6) originX0 = Math.round(TOWER_BASE_W - 6 - plateRight);
     if (originX0 + plateLeft < 28) originX0 = Math.round(28 - plateLeft);
     originX0 += 14;
-    const longest = shownList.reduce((w, cfg) => Math.max(w, (`${cfg.label} ${cfg.name}`).length * 6 * LABEL_SCALE), 0);
+    const longestW = shownList.reduce((w, cfg) => Math.max(w, measureFloorLabel(floorLabelText(cfg.label, cfg.name)).w), 0);
     const lipLocalX = (0 - (gridN - 1)) * tileW;
-    const leftPad = Math.max(0, 16 + longest + 8 - (originX0 + lipLocalX));
+    const minLip = FLOOR_LABEL_MIN_X + longestW + FLOOR_LABEL_LIP_GAP;
+    const leftPad = Math.max(0, minLip - (originX0 + lipLocalX));
     originX0 += leftPad;
     shownList.forEach((cfg, index) => {
       const fromTop = floorsN - 1 - index;
@@ -444,9 +493,8 @@ export async function createTileFloor(
       const lay = layoutFor(cfg.type, cfg.level);
       layout = lay;
       const lip = iso(0, gridN - 1, floorZ);
-      const label = `${cfg.label} ${cfg.name}`;
-      const textW = label.length * 6 * LABEL_SCALE;
-      const textH = 5 * LABEL_SCALE;
+      const label = floorLabelText(cfg.label, cfg.name);
+      const size = measureFloorLabel(label);
       const notchLay = notchLayout(lay, cfg.type, cfg.level);
       sims.push({
         cfg,
@@ -456,8 +504,8 @@ export async function createTileFloor(
         originY,
         outline: buildOutline((x, y) => towerSolid(x, y), iso),
         columns: columnRuns(iso),
-        labelX: Math.max(16, Math.min(frameW - 16 - textW, Math.round(lip.x) - textW - 8)),
-        labelY: Math.max(12, Math.min(frameH - 12 - textH, Math.round(lip.y) - Math.floor(textH / 2))),
+        labelX: Math.max(16, Math.min(frameW - 16 - size.w, Math.round(lip.x) - size.w - FLOOR_LABEL_LIP_GAP)),
+        labelY: Math.max(12, Math.min(frameH - 12 - size.h, Math.round(lip.y) - Math.floor(size.h / 2))),
       });
     });
     const lowSim = sims.find((s) => s.cfg.level === 1);
@@ -502,16 +550,23 @@ export async function createTileFloor(
       const roofY = high.originY - roofGap;
       originX = roofX;
       originY = roofY;
-      const anchor = iso(5.6, 4.4, floorZ);
-      const boxX = anchor.x - 88;
-      const boxY = anchor.y - 26 - 44;
+      const anchor = iso(SIGN_TILE.x, SIGN_TILE.y, floorZ);
+      const boxX = anchor.x - SIGN_BOX_OFFSET_X;
+      const boxY = anchor.y - SIGN_POST_H - SIGN_BOX_H;
       const sign = [
         { x: boxX - 8, y: boxY - 8 },
-        { x: boxX + 202 + 8, y: boxY - 8 },
-        { x: boxX + 202 + 8, y: anchor.y + 8 },
+        { x: boxX + SIGN_BOX_W + 8, y: boxY - 8 },
+        { x: boxX + SIGN_BOX_W + 8, y: anchor.y + 8 },
         { x: boxX - 8, y: anchor.y + 8 },
       ];
-      hitExclude = buildExcludeQuads(roofX, roofY, floorZ + 1, hitOpts, [sign]);
+      const mascotAt = iso(MASCOT_TILE.x, MASCOT_TILE.y, floorZ);
+      const mascot = [
+        { x: mascotAt.x - MASCOT_W / 2 - 8, y: mascotAt.y - MASCOT_H - 8 },
+        { x: mascotAt.x + MASCOT_W / 2 + 8, y: mascotAt.y - MASCOT_H - 8 },
+        { x: mascotAt.x + MASCOT_W / 2 + 8, y: mascotAt.y + 12 },
+        { x: mascotAt.x - MASCOT_W / 2 - 8, y: mascotAt.y + 12 },
+      ];
+      hitExclude = buildExcludeQuads(roofX, roofY, floorZ + 1, hitOpts, [sign, mascot]);
     }
   }
   // Read by scripts/capture.mjs to crop a floor and report geometry. Units are 540-grid pixels.
@@ -549,14 +604,15 @@ export async function createTileFloor(
     towerHook.labelScale = building ? LABEL_SCALE : 1;
     if (building) {
       towerHook.labels = sims.map((sim) => {
-        const text = `${sim.cfg.label} ${sim.cfg.name}`;
+        const text = floorLabelText(sim.cfg.label, sim.cfg.name);
+        const size = measureFloorLabel(text);
         return {
           level: sim.cfg.level,
           text,
           x: sim.labelX,
           y: sim.labelY,
-          w: text.length * 6 * LABEL_SCALE,
-          h: 5 * LABEL_SCALE,
+          w: size.w,
+          h: size.h,
         };
       });
       towerHook.elevatorShaft = {
@@ -595,6 +651,73 @@ export async function createTileFloor(
 
   function pushDraw(gx: number, gy: number, gz: number, draw: (g: Graphics) => void): void {
     queue.push({ key: (gx + gy) * 100 + gz, draw });
+  }
+
+
+  function labelStyle(fill: number, size = FLOOR_LABEL_SIZE) {
+    return {
+      fontFamily: FLOOR_LABEL_FONT_FAMILY,
+      fontSize: size,
+      fontWeight: '700' as const,
+      fill,
+      stroke: { color: FLOOR_LABEL_STROKE_COLOR, width: FLOOR_LABEL_STROKE, join: 'round' as const },
+      align: 'left' as const,
+      padding: 4,
+    };
+  }
+
+  function makeCjkText(text: string, fill: number, size = FLOOR_LABEL_SIZE): Text {
+    return new Text({
+      text,
+      style: labelStyle(fill, size),
+      resolution: Math.max(3, HD),
+      roundPixels: true,
+    });
+  }
+
+  function syncFloorLabels(): void {
+    if (!building) {
+      for (const view of floorLabelViews) view.text.visible = false;
+      if (headerView) headerView.visible = false;
+      if (mascotSprite) mascotSprite.visible = false;
+      return;
+    }
+    if (headerView) headerView.visible = false;
+    for (const sim of sims) {
+      let view = floorLabelViews.find((item) => item.level === sim.cfg.level);
+      const text = floorLabelText(sim.cfg.label, sim.cfg.name);
+      const fill = hoveredFloor === sim.cfg.level ? FLOOR_LABEL_LIT : FLOOR_LABEL_FILL;
+      if (!view) {
+        const node = makeCjkText(text, fill);
+        labelLayer.addChild(node);
+        view = { level: sim.cfg.level, text: node };
+        floorLabelViews.push(view);
+      } else {
+        view.text.text = text;
+        view.text.style.fill = fill;
+      }
+      view.text.visible = true;
+      view.text.position.set(sim.labelX, sim.labelY);
+    }
+    for (const view of floorLabelViews) {
+      if (!sims.some((sim) => sim.cfg.level === view.level)) view.text.visible = false;
+    }
+  }
+
+  function syncHeader(sim: (typeof sims)[number], headerY: number): void {
+    if (building) {
+      if (headerView) headerView.visible = false;
+      return;
+    }
+    const title = `PATSNAP · ${sim.cfg.label} ${sim.cfg.name}`;
+    if (!headerView) {
+      headerView = makeCjkText(title, WHITE, 16);
+      labelLayer.addChild(headerView);
+    } else {
+      headerView.text = title;
+    }
+    headerView.visible = true;
+    headerView.position.set(8, headerY);
   }
 
   function paintText(g: Graphics, text: string, x: number, y: number, color: number, scale = 1): void {
@@ -1539,11 +1662,9 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     }
     if (building) {
       paintRoof(now);
-      for (const sim of sims) {
-        paintText(world, `${sim.cfg.label} ${sim.cfg.name}`, sim.labelX, sim.labelY, WHITE, LABEL_SCALE);
-      }
       paintElevator();
     }
+    syncFloorLabels();
     if (hour >= 20 || hour < 6) world.rect(0, 0, frameW, frameH).fill({ color: 0x02060c, alpha: 0.28 });
     app.render();
   }
@@ -1567,12 +1688,7 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     }
     strokeLoop(world, buildOutline((x, y) => towerSolid(x, y), iso), ICE);
     // Four outdoor AC units: pad, body, fan, side grille. Inset on solid roof, clear of the sign.
-    const acUnits = [
-      { x: 2.3, y: 9.2 },
-      { x: 3.3, y: 3.2 },
-      { x: 12.3, y: 2.3 },
-      { x: 15.3, y: 4.3 },
-    ];
+    const acUnits = AC_UNITS;
     for (const spot of acUnits) {
       if (!towerSolid(Math.floor(spot.x), Math.floor(spot.y))) continue;
       const p = iso(spot.x, spot.y, floorZ);
@@ -1592,17 +1708,17 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         world.rect(cx + 3, cy - 11 + i * 2, 3, 1).fill({ color: ICE });
       }
     }
-    const anchor = iso(5.6, 4.4, floorZ);
+    const anchor = iso(SIGN_TILE.x, SIGN_TILE.y, floorZ);
     const ax = Math.round(anchor.x);
     const ay = Math.round(anchor.y);
-    // PATSNAP board scaled ≈2.2× on both axes; posts grow with the board (was 92×20, posts 12).
-    const postH = 26;
-    const boxW = 202;
-    const boxH = 44;
-    const boxX = ax - 88;
+    // PATSNAP board scaled ≈2.2×, shifted left-rear so the mascot can stand on the roof to its right.
+    const postH = SIGN_POST_H;
+    const boxW = SIGN_BOX_W;
+    const boxH = SIGN_BOX_H;
+    const boxX = ax - SIGN_BOX_OFFSET_X;
     const boxY = ay - postH - boxH;
-    world.rect(ax - 53, ay - postH, 3, postH).fill({ color: ICE });
-    world.rect(ax + 48, ay - postH, 3, postH).fill({ color: ICE });
+    world.rect(ax - SIGN_POST_LEFT, ay - postH, 3, postH).fill({ color: ICE });
+    world.rect(ax + SIGN_POST_RIGHT, ay - postH, 3, postH).fill({ color: ICE });
     glow.rect(boxX - 6, boxY - 6, boxW + 12, boxH + 12).fill({ color: ICE, alpha: 0.2 });
     world.rect(boxX, boxY, boxW, boxH).fill({ color: INK });
     world.rect(boxX, boxY, boxW, 1).fill({ color: WHITE });
@@ -1610,6 +1726,20 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     world.rect(boxX, boxY, 1, boxH).fill({ color: ICE });
     world.rect(boxX + boxW - 1, boxY, 1, boxH).fill({ color: ICE });
     paintText(world, 'PATSNAP', boxX + 17, boxY + 8, WHITE, 4);
+    const foot = iso(MASCOT_TILE.x, MASCOT_TILE.y, floorZ);
+    const pad = [
+      iso(MASCOT_TILE.x - 1.15, MASCOT_TILE.y - 0.55, floorZ),
+      iso(MASCOT_TILE.x + 1.15, MASCOT_TILE.y - 0.55, floorZ),
+      iso(MASCOT_TILE.x + 1.15, MASCOT_TILE.y + 0.7, floorZ),
+      iso(MASCOT_TILE.x - 1.15, MASCOT_TILE.y + 0.7, floorZ),
+    ];
+    poly(world, pad, NAVY, 1);
+    strokeLoop(world, measure([...pad, pad[0]!]), ICE);
+    world.rect(Math.round(foot.x) - 16, Math.round(foot.y) - 2, 32, 4).fill({ color: 0x041018, alpha: 0.55 });
+    if (mascotSprite) {
+      mascotSprite.position.set(foot.x, foot.y);
+      mascotSprite.visible = true;
+    }
     originX = low.originX;
     originY = low.originY;
     const a = iso(0, 0, 0);
@@ -2193,8 +2323,8 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     const wallTop = iso(0, 0, wallZ).y;
     if (!building) {
       const headerY = Math.max(4, Math.round(wallTop) - 30);
-      paintText(world, `PATSNAP . ${sim.cfg.label} ${sim.cfg.name}`, 8, headerY, WHITE, 3);
-      paintText(world, `SEAT ${seated}/${Math.max(layout.desks.length, seated)}  ON ${people.length}`, 8, headerY + 18, ICE, 2);
+      syncHeader(sim, headerY);
+      paintText(world, `SEAT ${seated}/${Math.max(layout.desks.length, seated)}  ON ${people.length}`, 8, headerY + 22, ICE, 2);
     }
 
     for (const spot of glowSpots) {
@@ -2459,15 +2589,15 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       originX = sim.originX;
       originY = sim.originY;
       const lip = iso(0, gridN - 1, floorZ);
-      const textH = 5 * LABEL_SCALE;
       const labels = sims.map((entry) => {
-        const text = `${entry.cfg.label} ${entry.cfg.name}`;
+        const text = floorLabelText(entry.cfg.label, entry.cfg.name);
+        const size = measureFloorLabel(text);
         return {
           level: entry.cfg.level,
           x: entry.labelX,
           y: entry.labelY,
-          w: text.length * 6 * LABEL_SCALE,
-          h: 5 * LABEL_SCALE,
+          w: size.w,
+          h: size.h,
         };
       });
       const self = labels.find((item) => item.level === level) ?? {
@@ -2475,12 +2605,12 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         x: sim.labelX,
         y: sim.labelY,
         w: 0,
-        h: textH,
+        h: measureFloorLabel(floorLabelText(sim.cfg.label, sim.cfg.name)).h,
       };
       // Attach just under this floor's glyphs; the overlay routes around every label box.
       return {
         x: lip.x,
-        y: sim.labelY + textH + 4,
+        y: sim.labelY + self.h + 4,
         labelX: sim.labelX,
         labelY: sim.labelY,
         labelW: self.w,
