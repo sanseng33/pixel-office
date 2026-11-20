@@ -217,8 +217,8 @@ export const floors: readonly FloorConfig[] = [
     level: 6,
     type: 'vacant',
     label: '6F',
-    name: 'VACANT',
-    title: '空置',
+    name: 'GYM',
+    title: '健身房',
     stations: 24,
     occupancy: 0,
     people: 0,
@@ -266,7 +266,7 @@ export const ROOF_EDGE: readonly Vec2[] = [
   { x: 190, y: 248 },
 ];
 
-export const PLATE_SRC = '/assets/bg-shell.jpg';
+export const PLATE_SRC = `${import.meta.env.BASE_URL}assets/bg-shell.jpg`;
 export const PLATE_SIZE = 1024;
 
 export function isoPoint(floorCfg: FloorConfig, u: number, v: number): Vec2 {

@@ -67,10 +67,14 @@ export interface PlateView {
   canvas: HTMLCanvasElement;
   el: HTMLElement;
   update(dt: number, now: number): void;
-  resize(displayPx: number): void;
+  resize(availW: number, availH?: number): void;
   push(event: OfficeEvent): void;
   levelsFor(type: OfficeEventType): number[];
   setHour(hour: number): void;
+  hitFloor?(lx: number, ly: number): number;
+  setHoveredFloor?(level: number): void;
+  floorGuideAnchor?(level: number): { x: number; y: number; labelX: number; labelY: number; labelW: number; labelH: number; lipX: number; labels: { level: number; x: number; y: number; w: number; h: number }[] } | null;
+  logicalSize?(): { width: number; height: number };
 }
 
 const GLYPH: Record<string, string[]> = {
@@ -850,8 +854,8 @@ export function createPlate(configs: readonly FloorConfig[], options?: { debug?:
   return {
     canvas: overlay,
     el: wrap,
-    resize(displayPx: number) {
-      size = Math.max(1, displayPx);
+    resize(availW: number, _availH?: number) {
+      size = Math.max(1, availW);
       base.width = size;
       base.height = size;
       overlay.width = size;

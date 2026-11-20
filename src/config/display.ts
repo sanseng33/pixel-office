@@ -1,8 +1,8 @@
 /** Logical pixel resolution. 540 scales ×2 to 1080 and ×4 to 2160. */
 export const VIEW = 540;
 
-/** Near-black lobby surround. Also the letterbox color. */
-export const BG = '#060910';
+/** Page letterbox and canvas clear. Must match engine NAVY 0x071422. */
+export const BG = '#071422';
 
 export const BURN_IN_INTERVAL_MS = 15 * 60 * 1000;
 export const BURN_IN_FAST_MS = 3000;

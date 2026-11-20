@@ -22,7 +22,12 @@ export type FurnKind =
   | 'print'
   | 'booth'
   | 'shelf'
-  | 'chairs';
+  | 'chairs'
+  | 'tread'
+  | 'bike'
+  | 'weights'
+  | 'bench'
+  | 'mat';
 
 export interface Furn {
   kind: FurnKind;
@@ -233,13 +238,18 @@ function itLayout(): FloorLayout {
 }
 
 function vacantLayout(): FloorLayout {
+  // 6F is now a gym (type stays vacant so occupancy stays 0). Sparse basic equipment.
   const furniture: Furn[] = [];
-  put(furniture, 'box', 3, 3);
-  put(furniture, 'box', 4, 3);
-  put(furniture, 'box', 9, 5, 2);
-  put(furniture, 'marker', 6, 8);
-  put(furniture, 'marker', 12, 4);
-  put(furniture, 'marker', 2, 10);
+  put(furniture, 'tread', 2, 11, 2);
+  put(furniture, 'tread', 5, 11, 2);
+  put(furniture, 'mat', 2, 9);
+  put(furniture, 'mat', 4, 9);
+  put(furniture, 'bench', 6, 9, 2);
+  put(furniture, 'bike', 11, 6);
+  put(furniture, 'bike', 13, 6);
+  put(furniture, 'weights', 11, 3, 2);
+  put(furniture, 'bench', 13, 3);
+  put(furniture, 'plant', 13, 4);
   return base('vacant', furniture, []);
 }
 

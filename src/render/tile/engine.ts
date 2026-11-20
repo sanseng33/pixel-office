@@ -5,6 +5,8 @@ import type { OfficeEvent, OfficeEventType } from '../../events/source.ts';
 import type { PlateView } from '../plate.ts';
 import { PLAN, layoutFor } from './layout.ts';
 import type { FloorLayout, Furn } from './layout.ts';
+import { createElevator, stepElevator, type Elevator } from './elevator.ts';
+import { buildExcludeQuads, buildFloorHitEntries, hitFloorAt, type FloorHitEntry } from './floorHit.ts';
 
 /** Single-floor tiles are 16×11. The stacked building uses a flatter slab so seven floors fit the square. */
 let tileW = 16;
@@ -153,18 +155,16 @@ function mulberry(seed: number): () => number {
 
 /**
  * Live tower plate. A: 17×17 minus a 8×8 notch = 225 tiles (the 15-tile PLAN is only the single-floor view).
- * B (?plate=b): 19×19 minus 9×9 = 280 tiles, +24% floor area. Baseline content is shifted by SHIFT so it keeps
+ * B (default, or ?plate=b): 19×19 minus 9×9 = 280 tiles, +24% floor area. Baseline content is shifted by SHIFT so it keeps
  * the same relation to the notch, and every storey shares the same footprint.
+ * Explicit ?plate=a still selects the older 17×17 plate.
  */
-const PLATE_B = new URLSearchParams(location.search).get('plate') === 'b';
+const PLATE_B = new URLSearchParams(location.search).get('plate') !== 'a';
 const TOWER_N = PLATE_B ? 19 : 17;
 const TOWER_CUT = PLATE_B ? 10 : 9;
 const SHIFT = PLATE_B ? 1 : 0;
-/** Internal supersample. 2 draws at 1080 so 5F can use half-pixel detail; other floors stay on the 540 grid. */
-const HD = Math.max(1, Math.min(2, Math.floor(Number(new URLSearchParams(location.search).get('hd') ?? '1')) || 1));
-const RES = VIEW * HD;
-/** Level whose sprites use the fine path. */
-const DETAIL_LEVEL = 5;
+/** Internal supersample. Logical px are the 540/600 grid; ?hd=2 draws each logical px as 2 backing px (storey 52 → 104). */
+const HD = Math.max(1, Math.min(2, Math.floor(Number(new URLSearchParams(location.search).get('hd') ?? '2')) || 2));
 let fine = false;
 let gridN = PLAN;
 
@@ -200,11 +200,18 @@ export async function createTileFloor(
   const debug = options?.debug === true;
   let roofGap = 0;
   let storeyStep = 44;
+  // Logical height stays 600 so the tower keeps its storey/roof layout. Width
+  // is 640 to hold 2× floor labels on the left and a right-edge elevator
+  // without shrinking the building. Do not scale the tower back down.
+  const frameW = building ? 640 : VIEW;
+  const frameH = building ? 600 : VIEW;
+  const resW = frameW * HD;
+  const resH = frameH * HD;
 
   const app = new Application();
   await app.init({
-    width: RES,
-    height: RES,
+    width: resW,
+    height: resH,
     background: NAVY,
     antialias: false,
     resolution: 1,
@@ -349,6 +356,25 @@ export async function createTileFloor(
     return crew;
   }
 
+  const LABEL_SCALE = 2;
+  // Tile-space shaft: flush to the y=0 facade at the right tip (x=gridN).
+  // Negative y is outward (iso up-right) so the box has visible top and side thickness.
+  const SHAFT_X0 = gridN - 1.4;
+  const SHAFT_X1 = gridN;
+  const SHAFT_Y0 = -0.85;
+  const SHAFT_Y1 = 0;
+  const CAR_H = 22;
+  const elevator: Elevator = createElevator(20261119, 1);
+  const elevStops: number[] = [];
+  let shaftTop = 0;
+  let shaftBot = 0;
+  let shaftMinX = 0;
+  let shaftMaxX = 0;
+  let shaftH = 0;
+  let hoveredFloor = 0;
+  let hitEntries: FloorHitEntry[] = [];
+  let hitExclude: Pt[][] = [];
+
   originX = 0;
   originY = 0;
   const box = boundsOf();
@@ -357,8 +383,8 @@ export async function createTileFloor(
     const headerBlock = 22;
     const contentTop = box.minY - headerBlock;
     const contentBottom = box.maxY + 2;
-    originX = Math.round(VIEW / 2 - (box.minX + box.maxX) / 2);
-    originY = Math.round(VIEW / 2 - (contentTop + contentBottom) / 2);
+    originX = Math.round(frameW / 2 - (box.minX + box.maxX) / 2);
+    originY = Math.round(frameH / 2 - (contentTop + contentBottom) / 2);
     const lay = layoutFor(shown.type, shown.level);
     layout = lay;
     sims.push({
@@ -393,16 +419,24 @@ export async function createTileFloor(
         if (right.x > plateRight) plateRight = right.x;
       }
     }
-    storeyStep = 46;
+    storeyStep = 52;
     const wallOver = Math.ceil((wallZ - floorZ) * zH);
-    roofGap = PLATE_B ? 30 : 40;
+    // Roof sits one storey above the 7F slab — same 52px clear height as 1F–6F.
+    roofGap = storeyStep;
     const floorsN = shownList.length;
     const totalH = (plateBottom - plateTop) + storeyStep * (floorsN - 1) + roofGap + wallOver + 8;
-    const top = Math.max(10, Math.round((VIEW - totalH) / 2));
-    let originX0 = Math.round((VIEW - (plateRight - plateLeft)) / 2 - plateLeft);
-    if (originX0 + plateRight > VIEW - 6) originX0 = Math.round(VIEW - 6 - plateRight);
+    const top = Math.max(16, Math.round((frameH - totalH) / 2));
+    // Place the tower as in the 600-wide canvas, then shift right only as
+    // needed so 2× labels fit in the left gutter. Do not recenter in the
+    // wider frame (that would shrink the tower or steal the right shaft).
+    let originX0 = Math.round((600 - (plateRight - plateLeft)) / 2 - plateLeft);
+    if (originX0 + plateRight > 600 - 6) originX0 = Math.round(600 - 6 - plateRight);
     if (originX0 + plateLeft < 28) originX0 = Math.round(28 - plateLeft);
     originX0 += 14;
+    const longest = shownList.reduce((w, cfg) => Math.max(w, (`${cfg.label} ${cfg.name}`).length * 6 * LABEL_SCALE), 0);
+    const lipLocalX = (0 - (gridN - 1)) * tileW;
+    const leftPad = Math.max(0, 16 + longest + 8 - (originX0 + lipLocalX));
+    originX0 += leftPad;
     shownList.forEach((cfg, index) => {
       const fromTop = floorsN - 1 - index;
       originX = originX0;
@@ -411,7 +445,8 @@ export async function createTileFloor(
       layout = lay;
       const lip = iso(0, gridN - 1, floorZ);
       const label = `${cfg.label} ${cfg.name}`;
-      const textW = label.length * 6;
+      const textW = label.length * 6 * LABEL_SCALE;
+      const textH = 5 * LABEL_SCALE;
       const notchLay = notchLayout(lay, cfg.type, cfg.level);
       sims.push({
         cfg,
@@ -421,13 +456,64 @@ export async function createTileFloor(
         originY,
         outline: buildOutline((x, y) => towerSolid(x, y), iso),
         columns: columnRuns(iso),
-        labelX: Math.max(12, Math.min(VIEW - 12 - textW, Math.round(lip.x) - textW - 6)),
-        labelY: Math.max(12, Math.min(VIEW - 16, Math.round(lip.y) - 6)),
+        labelX: Math.max(16, Math.min(frameW - 16 - textW, Math.round(lip.x) - textW - 8)),
+        labelY: Math.max(12, Math.min(frameH - 12 - textH, Math.round(lip.y) - Math.floor(textH / 2))),
       });
     });
+    const lowSim = sims.find((s) => s.cfg.level === 1);
+    const highSim = sims.find((s) => s.cfg.level === 7);
+    if (lowSim && highSim) {
+      originX = lowSim.originX;
+      originY = lowSim.originY;
+      // Short overrun above the 7F wall, still below the roof slab / PATSNAP board.
+      shaftH = (lowSim.originY - highSim.originY) + wallZ * zH + 8;
+      const base = corners(SHAFT_X0, SHAFT_Y0, SHAFT_X1, SHAFT_Y1, 0);
+      const extents = [...base, ...base.map((p) => raise(p, shaftH))];
+      shaftMinX = Math.min(...extents.map((p) => p.x));
+      shaftMaxX = Math.max(...extents.map((p) => p.x));
+      shaftTop = Math.max(2, Math.round(Math.min(...extents.map((p) => p.y))));
+      shaftBot = Math.min(frameH - 2, Math.round(Math.max(...extents.map((p) => p.y))));
+      for (const sim of sims) {
+        originX = sim.originX;
+        originY = sim.originY;
+        elevStops[sim.cfg.level] = iso((SHAFT_X0 + SHAFT_X1) / 2, (SHAFT_Y0 + SHAFT_Y1) / 2, floorZ).y;
+      }
+    }
   }
   layout = sims[0]?.layout ?? layout;
   people = sims[0]?.people ?? [];
+  if (building) {
+    const hitOpts = {
+      gridN,
+      tileW,
+      tileH,
+      zH,
+      wallZ,
+      storeyStep,
+      solid: towerSolid,
+    };
+    hitEntries = buildFloorHitEntries(
+      sims.map((sim) => ({ level: sim.cfg.level, originX: sim.originX, originY: sim.originY })),
+      hitOpts,
+    );
+    const high = sims.find((sim) => sim.cfg.level === 7);
+    if (high) {
+      const roofX = high.originX;
+      const roofY = high.originY - roofGap;
+      originX = roofX;
+      originY = roofY;
+      const anchor = iso(5.6, 4.4, floorZ);
+      const boxX = anchor.x - 88;
+      const boxY = anchor.y - 26 - 44;
+      const sign = [
+        { x: boxX - 8, y: boxY - 8 },
+        { x: boxX + 202 + 8, y: boxY - 8 },
+        { x: boxX + 202 + 8, y: anchor.y + 8 },
+        { x: boxX - 8, y: anchor.y + 8 },
+      ];
+      hitExclude = buildExcludeQuads(roofX, roofY, floorZ + 1, hitOpts, [sign]);
+    }
+  }
   // Read by scripts/capture.mjs to crop a floor and report geometry. Units are 540-grid pixels.
   (window as unknown as { __tower?: unknown }).__tower = {
     gridN,
@@ -456,6 +542,43 @@ export async function createTileFloor(
       };
     }),
   };
+  const towerHook = (window as unknown as { __tower?: Record<string, unknown>; __elevator?: unknown }).__tower;
+  if (towerHook) {
+    towerHook.frameW = frameW;
+    towerHook.frameH = frameH;
+    towerHook.labelScale = building ? LABEL_SCALE : 1;
+    if (building) {
+      towerHook.labels = sims.map((sim) => {
+        const text = `${sim.cfg.label} ${sim.cfg.name}`;
+        return {
+          level: sim.cfg.level,
+          text,
+          x: sim.labelX,
+          y: sim.labelY,
+          w: text.length * 6 * LABEL_SCALE,
+          h: 5 * LABEL_SCALE,
+        };
+      });
+      towerHook.elevatorShaft = {
+        x0: SHAFT_X0,
+        x1: SHAFT_X1,
+        y0: SHAFT_Y0,
+        y1: SHAFT_Y1,
+        flushWallY: SHAFT_Y1,
+        minX: shaftMinX,
+        maxX: shaftMaxX,
+        top: shaftTop,
+        bot: shaftBot,
+        height: shaftH,
+      };
+      towerHook.plants = sims.map((sim) => ({
+        level: sim.cfg.level,
+        count: sim.layout.furniture.filter((f) => f.kind === 'plant').length,
+      }));
+      towerHook.hitFloor = (x: number, y: number) => hitFloorAt(x, y, hitEntries, hitExclude);
+      towerHook.hoveredFloor = () => hoveredFloor;
+    }
+  }
   function countSolid(): number {
     let n = 0;
     for (let y = 0; y < gridN; y++) for (let x = 0; x < gridN; x++) if (towerSolid(x, y)) n++;
@@ -537,6 +660,15 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
 }
 
   let personScale = 1;
+
+  /** Desk-top lift uses the same SPR as stacked furniture so typists sit at the slab, not through it. */
+  function seatLift(): number {
+    const saved = SPR;
+    if (building) SPR = 0.88;
+    const lift = u(DESK_H) - s(2);
+    SPR = saved;
+    return lift;
+  }
 
   function drawHeart(g: Graphics, x: number, y: number): void {
     const s = personScale;
@@ -784,21 +916,34 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       return;
     }
     if (item.kind === 'plant') {
-      const [a, b, c, d] = corners(item.x + 0.34, item.y + 0.34, item.x + 0.66, item.y + 0.66, floorZ);
-      volume(g, a, b, c, d, 0, u(4));
-      const leaf = raise(iso(item.x + 0.5, item.y + 0.5, floorZ), u(4));
-      const lx = Math.round(leaf.x);
-      const ly = Math.round(leaf.y);
-      g.rect(lx, ly - 4, 1, 4).fill({ color: ICE });
-      g.rect(lx - 4, ly - 9, 9, 6).fill({ color: INK });
-      g.rect(lx - 4, ly - 9, 9, 1).fill({ color: WHITE });
-      g.rect(lx - 4, ly - 4, 9, 1).fill({ color: ICE });
-      g.rect(lx - 4, ly - 9, 1, 6).fill({ color: ICE });
-      g.rect(lx + 4, ly - 9, 1, 6).fill({ color: ICE });
-      g.rect(lx - 2, ly - 12, 5, 3).fill({ color: INK });
-      g.rect(lx - 2, ly - 12, 5, 1).fill({ color: WHITE });
-      g.rect(lx - 2, ly - 12, 1, 3).fill({ color: ICE });
-      g.rect(lx + 2, ly - 12, 1, 3).fill({ color: ICE });
+      const [a, b, c, d] = corners(item.x + 0.36, item.y + 0.36, item.x + 0.64, item.y + 0.64, floorZ);
+      volume(g, a, b, c, d, 0, u(3));
+      const pot = raise(iso(item.x + 0.5, item.y + 0.5, floorZ), u(3));
+      const cx = Math.round(pot.x);
+      const cy = Math.round(pot.y);
+      // Short stem, then a few ICE leaves fanning up and outward (WHITE tips).
+      // Open silhouette — not a filled 9×6 block that read as a mini screen.
+      g.rect(cx, cy - 4, 1, 4).fill({ color: ICE });
+      g.rect(cx, cy - 9, 1, 5).fill({ color: ICE });
+      g.rect(cx - 1, cy - 8, 1, 3).fill({ color: ICE });
+      g.rect(cx + 1, cy - 8, 1, 3).fill({ color: ICE });
+      g.rect(cx, cy - 10, 1, 1).fill({ color: WHITE });
+      g.rect(cx - 1, cy - 6, 1, 2).fill({ color: ICE });
+      g.rect(cx - 2, cy - 8, 1, 3).fill({ color: ICE });
+      g.rect(cx - 3, cy - 8, 1, 2).fill({ color: ICE });
+      g.rect(cx - 4, cy - 9, 1, 1).fill({ color: WHITE });
+      g.rect(cx + 1, cy - 6, 1, 2).fill({ color: ICE });
+      g.rect(cx + 2, cy - 8, 1, 3).fill({ color: ICE });
+      g.rect(cx + 3, cy - 8, 1, 2).fill({ color: ICE });
+      g.rect(cx + 4, cy - 9, 1, 1).fill({ color: WHITE });
+      g.rect(cx - 1, cy - 4, 1, 1).fill({ color: ICE });
+      g.rect(cx - 2, cy - 5, 1, 2).fill({ color: ICE });
+      g.rect(cx - 3, cy - 6, 1, 2).fill({ color: ICE });
+      g.rect(cx - 4, cy - 6, 1, 1).fill({ color: WHITE });
+      g.rect(cx + 1, cy - 4, 1, 1).fill({ color: ICE });
+      g.rect(cx + 2, cy - 5, 1, 2).fill({ color: ICE });
+      g.rect(cx + 3, cy - 6, 1, 2).fill({ color: ICE });
+      g.rect(cx + 4, cy - 6, 1, 1).fill({ color: WHITE });
       return;
     }
     if (item.kind === 'sofa') {
@@ -972,6 +1117,65 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       g.rect(x - u(1), y, u(3), u(1)).fill({ color: ICE });
       return;
     }
+    if (item.kind === 'tread') {
+      const [a, b, c, d] = corners(item.x + 0.08, item.y + 0.28, item.x + item.w - 0.08, item.y + 0.72, floorZ);
+      volume(g, a, b, c, d, 0, u(3));
+      const belt = raise(iso(item.x + item.w / 2, item.y + 0.5, floorZ), u(3));
+      g.rect(Math.round(belt.x) - u(7), Math.round(belt.y), u(14), u(1)).fill({ color: ICE });
+      g.rect(Math.round(belt.x) - u(6), Math.round(belt.y) + u(2), u(12), u(1)).fill({ color: WHITE });
+      const console = iso(item.x + 0.22, item.y + 0.5, floorZ);
+      g.rect(Math.round(console.x) - u(1), Math.round(console.y) - u(10), u(2), u(8)).fill({ color: ICE });
+      g.rect(Math.round(console.x) - u(3), Math.round(console.y) - u(12), u(6), u(4)).fill({ color: INK });
+      g.rect(Math.round(console.x) - u(3), Math.round(console.y) - u(12), u(6), u(1)).fill({ color: WHITE });
+      g.rect(Math.round(console.x) - u(2), Math.round(console.y) - u(11), u(4), u(2)).fill({ color: ICE });
+      return;
+    }
+    if (item.kind === 'bike') {
+      const base = iso(item.x + 0.5, item.y + 0.5, floorZ);
+      const x = Math.round(base.x);
+      const y = Math.round(base.y);
+      g.rect(x - u(4), y - u(1), u(8), u(2)).fill({ color: INK });
+      g.rect(x - u(4), y - u(1), u(8), u(1)).fill({ color: ICE });
+      g.rect(x - u(1), y - u(8), u(2), u(7)).fill({ color: ICE });
+      g.rect(x - u(3), y - u(9), u(4), u(2)).fill({ color: WHITE });
+      g.rect(x - u(5), y - u(6), u(3), u(1)).fill({ color: ICE });
+      g.rect(x + u(2), y - u(5), u(1), u(1)).fill({ color: ICE });
+      g.rect(x + u(2), y - u(6), u(4), u(4)).fill({ color: INK });
+      g.rect(x + u(2), y - u(6), u(4), u(1)).fill({ color: WHITE });
+      g.rect(x + u(3), y - u(5), u(2), u(2)).fill({ color: ICE });
+      return;
+    }
+    if (item.kind === 'weights') {
+      const [a, b, c, d] = corners(item.x + 0.14, item.y + 0.28, item.x + item.w - 0.14, item.y + 0.72, floorZ);
+      volume(g, a, b, c, d, 0, u(3));
+      const mid = raise(iso(item.x + item.w / 2, item.y + 0.5, floorZ), u(3));
+      const x = Math.round(mid.x);
+      const y = Math.round(mid.y);
+      g.rect(x - u(6), y - u(10), u(2), u(10)).fill({ color: ICE });
+      g.rect(x + u(4), y - u(10), u(2), u(10)).fill({ color: ICE });
+      g.rect(x - u(6), y - u(11), u(12), u(1)).fill({ color: WHITE });
+      for (const ox of [-4, 0, 4]) {
+        g.rect(x + u(ox) - u(2), y - u(8), u(4), u(4)).fill({ color: INK });
+        g.rect(x + u(ox) - u(2), y - u(8), u(4), u(1)).fill({ color: WHITE });
+        g.rect(x + u(ox) - u(1), y - u(7), u(2), u(2)).fill({ color: ICE });
+      }
+      return;
+    }
+    if (item.kind === 'bench') {
+      const [a, b, c, d] = corners(item.x + 0.1, item.y + 0.3, item.x + item.w - 0.1, item.y + 0.7, floorZ);
+      volume(g, a, b, c, d, 0, u(4));
+      const pad = raise(iso(item.x + item.w / 2, item.y + 0.5, floorZ), u(4));
+      g.rect(Math.round(pad.x) - u(item.w * 5), Math.round(pad.y) - u(1), u(item.w * 10), u(2)).fill({ color: WHITE });
+      g.rect(Math.round(pad.x) - u(item.w * 5), Math.round(pad.y) - u(1), u(item.w * 10), u(1)).fill({ color: ICE });
+      return;
+    }
+    if (item.kind === 'mat') {
+      const [a, b, c, d] = corners(item.x + 0.12, item.y + 0.22, item.x + item.w - 0.12, item.y + 0.78, floorZ);
+      poly(g, [a, b, c, d], 0x0c2838, 1, ICE, 1);
+      const mid = iso(item.x + item.w / 2, item.y + 0.5, floorZ);
+      g.rect(Math.round(mid.x) - u(3), Math.round(mid.y), u(6), u(1)).fill({ color: WHITE });
+      return;
+    }
     const [a, b, c, d] = corners(item.x + 0.06, item.y + 0.16, item.x + item.w - 0.06, item.y + 0.84, floorZ);
     volume(g, a, b, c, d, 0, u(11));
     for (const ux of [0.55, 1.35]) {
@@ -991,6 +1195,11 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
   const SHIRT = [0x123a5e, 0x0e2c4a, 0x1a4670, 0x10324f] as const;
   const PANTS = 0x0a1a2c;
   const SKIN = 0x9fc9e6;
+  // Back-facing skull/hair used NAVY (ΔL=0 vs the floor), so the head vanished
+  // and only the ICE side ticks remained. HAIR is mid-navy, slightly darker
+  // than the darkest shirt (0x0e2c4a) but ΔL≈19.6 above the floor — a fill
+  // change, not an outline-only tweak.
+  const HAIR = 0x0f2a40;
   const SCREEN = 0x1a4670;
   const CODE = 0x4a8db3;
 
@@ -1022,6 +1231,8 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     const sitDrop = seated ? 4 : 0;
     if (!seated) {
       // Scissor walk: legs slant from hip, feet split; wider stride for clarity.
+      // ICE column edges + white toes (same language as coarse drawGuy) so the
+      // 1-backing-px legs read on the navy slab instead of vanishing as a half body.
       for (const [hip, o] of [
         [-3, off],
         [1, -off],
@@ -1029,30 +1240,39 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         for (let r = 1; r < 7; r++) {
           const x = hip + Math.round((o * (7 - r)) / 6);
           fill(x, r, 2, 1, PANTS);
-          if (r === 1 || r === 6) fill(x - 1, r, 1, 1, INK);
-          if (r === 1 || r === 6) fill(x + 2, r, 1, 1, INK);
+          fill(x - 1, r, 1, 1, ICE);
+          fill(x + 2, r, 1, 1, ICE);
         }
-        const foot = hip + o;
-        fill(foot - (side < 0 ? 1 : 0), 0, 3, 1, NAVY);
+        const heel = hip + o - (side < 0 ? 1 : 0);
+        fill(heel, 0, 3, 1, NAVY);
+        fill(heel + (side < 0 ? 0 : 2), 0, 1, 1, WHITE);
+        fill(heel, 1, 1, 1, ICE);
+        fill(heel + 2, 1, 1, 1, ICE);
       }
     } else {
       // Thighs forward onto the chair seat; shins hidden by the desk.
       fill(-3, 3, 6, 2, PANTS);
       fill(side > 0 ? 1 : -4, 1, 3, 2, PANTS);
-      fill(-4, 3, 1, 2, INK);
-      fill(3, 3, 1, 2, INK);
+      fill(-4, 3, 1, 2, ICE);
+      fill(3, 3, 1, 2, ICE);
+      fill(side > 0 ? 0 : -5, 1, 1, 2, ICE);
+      fill(side > 0 ? 4 : -1, 1, 1, 2, ICE);
     }
     const r0 = 7 - sitDrop;
     // Torso: shoulders wider than waist, belt line, collar.
     fill(-4, r0, 8, 1, INK);
     fill(-4, r0 + 1, 8, 5, shirt);
     fill(-5, r0 + 5, 10, 2, shirt);
-    fill(-5, r0 + 1, 1, 4, INK);
-    fill(4, r0 + 1, 1, 4, INK);
+    fill(-5, r0 + 1, 1, 4, ICE);
+    fill(4, r0 + 1, 1, 4, ICE);
     if (toward) {
       fill(-1, r0 + 6, 2, 1, WHITE);
       fill(0, r0 + 2, 1, 3, DIM);
-    } else fill(-3, r0 + 6, 6, 1, DIM);
+    } else {
+      // Back: closed collar and a centre seam, no buttons or shirt-front V.
+      fill(-2, r0 + 6, 4, 1, shirt);
+      fill(-1, r0 + 3, 2, 1, DIM);
+    }
     // Arms: sleeve plus hand, swinging opposite the legs. Seated typing hands come from drawHandsFine.
     if (!seated || chat) {
       const aL = chat ? 4 : Math.round(-off / 2);
@@ -1062,60 +1282,69 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       fill(5, r0 + 2 + aR, 2, 5, shirt);
       fill(5, r0 + 1 + aR, 2, 1, SKIN);
     } else {
-      fill(-6, r0 + 3, 2, 4, shirt);
-      fill(4, r0 + 3, 2, 4, shirt);
+      // Upper arms from the shoulders; forearms tuck inward so they meet the keyboard hands.
+      fill(-6, r0 + 4, 2, 3, shirt);
+      fill(-5, r0 + 2, 3, 2, shirt);
+      fill(4, r0 + 4, 2, 3, shirt);
+      fill(2, r0 + 2, 3, 2, shirt);
     }
     // Neck, head, hair with distinct silhouettes.
     const h0 = r0 + 7;
+    const hairFill = toward ? NAVY : HAIR;
     fill(-1, h0, 2, 1, SKIN);
-    fill(-3, h0 + 1, 6, 6, toward ? SKIN : NAVY);
-    fill(-4, h0 + 2, 1, 4, INK);
-    fill(3, h0 + 2, 1, 4, INK);
+    fill(-3, h0 + 1, 6, 6, toward ? SKIN : HAIR);
+    fill(-4, h0 + 2, 1, 4, ICE);
+    fill(3, h0 + 2, 1, 4, ICE);
     if (toward) {
       const look = side > 0 ? 1 : 0;
       fill(-2 + look, h0 + 3, 1, 2, INK);
       fill(1 + look, h0 + 3, 1, 2, INK);
       fill(-1, h0 + 2, 2, 1, DIM);
     }
-    fill(-3, h0 + 6, 6, 2, NAVY);
-    fill(-4, h0 + 5, 1, 2, NAVY);
-    fill(3, h0 + 5, 1, 2, NAVY);
+    fill(-3, h0 + 6, 6, 2, hairFill);
+    fill(-4, h0 + 5, 1, 2, hairFill);
+    fill(3, h0 + 5, 1, 2, hairFill);
     fill(-2, h0 + 7, 3, 1, DIM);
     // Hair: distinct styles, readable in silhouette (SHORT/SPIKY/BOB/TAIL).
     if (hair === 1) {
-      fill(-3, h0 + 8, 6, 1, NAVY);
+      fill(-3, h0 + 8, 6, 1, hairFill);
       fill(-2, h0 + 8, 1, 1, DIM);
-      fill(0, h0 + 8, 1, 2, NAVY);
+      fill(0, h0 + 8, 1, 2, hairFill);
       fill(1, h0 + 8, 1, 1, DIM);
     } else if (hair === 2) {
-      fill(-5, h0 + 1, 1, 5, NAVY);
-      fill(4, h0 + 1, 1, 5, NAVY);
-      fill(-3, h0 + 8, 6, 1, NAVY);
+      fill(-5, h0 + 1, 1, 5, hairFill);
+      fill(4, h0 + 1, 1, 5, hairFill);
+      fill(-3, h0 + 8, 6, 1, hairFill);
     } else if (hair === 3) {
       const tailSide = (toward ? -side : side) > 0 ? 4 : -5;
-      fill(tailSide, h0 + 2, 1, 5, NAVY);
-      fill(tailSide + (tailSide > 0 ? 1 : -1), h0 + 4, 1, 2, NAVY);
-      fill(-3, h0 + 7, 6, 1, NAVY);
+      fill(tailSide, h0 + 2, 1, 5, hairFill);
+      fill(tailSide + (tailSide > 0 ? 1 : -1), h0 + 4, 1, 2, hairFill);
+      fill(-3, h0 + 7, 6, 1, hairFill);
     } else {
-      fill(-3, h0 + 7, 6, 1, NAVY);
+      fill(-3, h0 + 7, 6, 1, hairFill);
     }
-    if (!toward) fill(-3, h0 + 1, 6, 5, NAVY);
+    if (!toward) {
+      // Hair covers the skull; a darker nape line keeps the back of the head distinct from the collar.
+      fill(-3, h0 + 1, 6, 5, HAIR);
+      fill(-2, h0 + 1, 4, 1, DIM);
+    }
     if (chat) drawHeart(g, fx, fy - (h0 + 11) * p);
   }
 
   function drawHandsFine(g: Graphics, foot: Pt, phase: number): void {
     const p = personScale / HD;
+    const fx = q(foot.x);
+    const fy = q(foot.y);
     const tap = Math.floor(phase * 6) % 2;
-    // Left hand
-    g.rect(foot.x + (-7) * p, foot.y - (15 + tap) * p, 1 * p, 4 * p).fill({ color: INK });
-    g.rect(foot.x + (-6) * p, foot.y - (15 + tap) * p, 3 * p, 1 * p).fill({ color: SKIN });
-    g.rect(foot.x + (-6) * p, foot.y - (14 + tap) * p, 3 * p, 3 * p).fill({ color: SKIN });
-    g.rect(foot.x + (-6) * p, foot.y - (11 + tap) * p, 1 * p, 1 * p).fill({ color: WHITE });
-    // Right hand
-    g.rect(foot.x + (4) * p, foot.y - (15 + (1 - tap)) * p, 1 * p, 4 * p).fill({ color: INK });
-    g.rect(foot.x + (3) * p, foot.y - (15 + (1 - tap)) * p, 3 * p, 1 * p).fill({ color: SKIN });
-    g.rect(foot.x + (3) * p, foot.y - (14 + (1 - tap)) * p, 3 * p, 3 * p).fill({ color: SKIN });
-    g.rect(foot.x + (5) * p, foot.y - (11 + (1 - tap)) * p, 1 * p, 1 * p).fill({ color: WHITE });
+    // Seated typists are already raised to desk height and dropped 4 rows.
+    // Palms sit on the keyboard band (rows 4-6), meeting the forearm ends (~row 6).
+    const palm = (x: number, row: number, finger: number): void => {
+      g.rect(fx + (x - 1) * p, fy - (row + 3) * p, 1 * p, 3 * p).fill({ color: INK });
+      g.rect(fx + x * p, fy - (row + 3) * p, 3 * p, 3 * p).fill({ color: SKIN });
+      g.rect(fx + (x + finger) * p, fy - (row + 1) * p, 1 * p, 1 * p).fill({ color: WHITE });
+    };
+    palm(-5, 4 + tap, 0);
+    palm(3, 4 + (1 - tap), 2);
   }
 
   function drawMonitorFine(g: Graphics, mx: number, my: number, towardCamera: boolean, lit: boolean, now: number): void {
@@ -1220,7 +1449,7 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
   }
 
   function paintPoseSheet(): void {
-    world.rect(0, 0, VIEW, VIEW).fill({ color: 0x060910 });
+    world.rect(0, 0, frameW, frameH).fill({ color: 0x060910 });
     fine = HD > 1;
     const cols: { name: string; dx: number; dy: number; frame: number; pose: 'stand' | 'walk' | 'sit' | 'chat' }[] = [
       { name: '+X', dx: 1, dy: 0, frame: 0, pose: 'stand' },
@@ -1251,6 +1480,45 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     }
   }
 
+  function carLift(floorY: number): number {
+    return (floorY - 1) * storeyStep + floorZ * zH;
+  }
+
+  function paintElevator(): void {
+    if (!building || shaftH <= 0) return;
+    const low = sims.find((s) => s.cfg.level === 1);
+    if (!low) return;
+    originX = low.originX;
+    originY = low.originY;
+    const base = corners(SHAFT_X0, SHAFT_Y0, SHAFT_X1, SHAFT_Y1, 0);
+    volume(world, base[0], base[1], base[2], base[3], 0, shaftH);
+    // Landing ticks on the outward (y=SHAFT_Y0) top edge, in the same iso.
+    for (let f = 1; f <= 7; f++) {
+      const mark = raise(iso((SHAFT_X0 + SHAFT_X1) / 2, SHAFT_Y0, 0), carLift(f));
+      const mx = Math.round(mark.x);
+      const my = Math.round(mark.y);
+      if (my > shaftTop && my < shaftBot) world.rect(mx - 2, my, 5, 1).fill({ color: ICE });
+    }
+    let h0 = carLift(elevator.y) + 1;
+    let h1 = h0 + CAR_H;
+    if (h0 < 2) {
+      h1 += 2 - h0;
+      h0 = 2;
+    }
+    if (h1 > shaftH - 2) {
+      h0 -= h1 - (shaftH - 2);
+      h1 = shaftH - 2;
+    }
+    if (h0 < 2) h0 = 2;
+    const inset = 0.1;
+    const car = corners(SHAFT_X0 + inset, SHAFT_Y0 + inset, SHAFT_X1 - inset, SHAFT_Y1 - inset, 0);
+    volume(world, car[0], car[1], car[2], car[3], h0, h1);
+    // Door slit on the building-facing face (y = SHAFT_Y1 = 0).
+    const door = raise(iso((SHAFT_X0 + SHAFT_X1) / 2, SHAFT_Y1, 0), (h0 + h1) / 2);
+    const dy = Math.max(8, Math.round(h1 - h0 - 8));
+    world.rect(Math.round(door.x), Math.round(door.y) - Math.floor(dy / 2), 1, dy).fill({ color: WHITE });
+  }
+
   function rebuild(now: number): void {
     world.clear();
     glow.clear();
@@ -1264,17 +1532,19 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       originY = sim.originY;
       layout = sim.layout;
       people = sim.people;
-      fine = HD > 1 && sim.cfg.level === DETAIL_LEVEL;
+      // Approved typist/silhouette sprites apply on every occupied floor at ?hd=2, not only 5F.
+      fine = HD > 1;
       paintFloor(now, sim);
       fine = false;
     }
     if (building) {
       paintRoof(now);
       for (const sim of sims) {
-        paintText(world, `${sim.cfg.label} ${sim.cfg.name}`, sim.labelX, sim.labelY, WHITE, 1);
+        paintText(world, `${sim.cfg.label} ${sim.cfg.name}`, sim.labelX, sim.labelY, WHITE, LABEL_SCALE);
       }
+      paintElevator();
     }
-    if (hour >= 20 || hour < 6) world.rect(0, 0, VIEW, VIEW).fill({ color: 0x02060c, alpha: 0.28 });
+    if (hour >= 20 || hour < 6) world.rect(0, 0, frameW, frameH).fill({ color: 0x02060c, alpha: 0.28 });
     app.render();
   }
 
@@ -1296,34 +1566,50 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       }
     }
     strokeLoop(world, buildOutline((x, y) => towerSolid(x, y), iso), ICE);
-    for (const spot of [iso(2.4, 6.4, floorZ), iso(10.8, 3.4, floorZ)]) {
-      const ax = Math.round(spot.x);
-      const ay = Math.round(spot.y) - 8;
-      world.rect(ax, ay, 14, 8).fill({ color: INK });
-      world.rect(ax, ay, 14, 1).fill({ color: WHITE });
-      world.rect(ax, ay + 7, 14, 1).fill({ color: ICE });
-      world.rect(ax, ay, 1, 8).fill({ color: ICE });
-      world.rect(ax + 13, ay, 1, 8).fill({ color: ICE });
-      world.rect(ax + 4, ay - 3, 6, 3).fill({ color: 0x163044 });
-      world.rect(ax + 4, ay - 3, 6, 1).fill({ color: ICE });
+    // Four outdoor AC units: pad, body, fan, side grille. Inset on solid roof, clear of the sign.
+    const acUnits = [
+      { x: 2.3, y: 9.2 },
+      { x: 3.3, y: 3.2 },
+      { x: 12.3, y: 2.3 },
+      { x: 15.3, y: 4.3 },
+    ];
+    for (const spot of acUnits) {
+      if (!towerSolid(Math.floor(spot.x), Math.floor(spot.y))) continue;
+      const p = iso(spot.x, spot.y, floorZ);
+      const cx = Math.round(p.x);
+      const cy = Math.round(p.y);
+      world.rect(cx - 8, cy - 2, 16, 3).fill({ color: INK });
+      world.rect(cx - 8, cy - 2, 16, 1).fill({ color: ICE });
+      world.rect(cx - 7, cy - 12, 14, 10).fill({ color: INK });
+      world.rect(cx - 7, cy - 12, 14, 1).fill({ color: WHITE });
+      world.rect(cx - 7, cy - 3, 14, 1).fill({ color: ICE });
+      world.rect(cx - 7, cy - 12, 1, 10).fill({ color: ICE });
+      world.rect(cx + 6, cy - 12, 1, 10).fill({ color: ICE });
+      world.rect(cx - 5, cy - 8, 7, 1).fill({ color: ICE });
+      world.rect(cx - 2, cy - 11, 1, 7).fill({ color: ICE });
+      world.rect(cx - 3, cy - 9, 3, 3).fill({ color: WHITE });
+      for (let i = 0; i < 4; i++) {
+        world.rect(cx + 3, cy - 11 + i * 2, 3, 1).fill({ color: ICE });
+      }
     }
     const anchor = iso(5.6, 4.4, floorZ);
     const ax = Math.round(anchor.x);
     const ay = Math.round(anchor.y);
-    const postH = 12;
-    const boxW = 92;
-    const boxH = 20;
-    const boxX = ax - 40;
+    // PATSNAP board scaled ≈2.2× on both axes; posts grow with the board (was 92×20, posts 12).
+    const postH = 26;
+    const boxW = 202;
+    const boxH = 44;
+    const boxX = ax - 88;
     const boxY = ay - postH - boxH;
-    world.rect(ax - 24, ay - postH, 2, postH).fill({ color: ICE });
-    world.rect(ax + 22, ay - postH, 2, postH).fill({ color: ICE });
-    glow.rect(boxX - 4, boxY - 4, boxW + 8, boxH + 8).fill({ color: ICE, alpha: 0.2 });
+    world.rect(ax - 53, ay - postH, 3, postH).fill({ color: ICE });
+    world.rect(ax + 48, ay - postH, 3, postH).fill({ color: ICE });
+    glow.rect(boxX - 6, boxY - 6, boxW + 12, boxH + 12).fill({ color: ICE, alpha: 0.2 });
     world.rect(boxX, boxY, boxW, boxH).fill({ color: INK });
     world.rect(boxX, boxY, boxW, 1).fill({ color: WHITE });
     world.rect(boxX, boxY + boxH - 1, boxW, 1).fill({ color: ICE });
     world.rect(boxX, boxY, 1, boxH).fill({ color: ICE });
     world.rect(boxX + boxW - 1, boxY, 1, boxH).fill({ color: ICE });
-    paintText(world, 'PATSNAP', boxX + 5, boxY + 5, WHITE, 2);
+    paintText(world, 'PATSNAP', boxX + 17, boxY + 8, WHITE, 4);
     originX = low.originX;
     originY = low.originY;
     const a = iso(0, 0, 0);
@@ -1485,6 +1771,63 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     const putAt = (kind: Furn['kind'], x: number, y: number, w = 1, face: 1 | -1 = 1): boolean =>
       put(kind, x - SHIFT, y - SHIFT, w, face);
     const seen = (x: number, y: number) => visibleTile(x, y) && !blocked.has(`${x},${y}`) && !aisle(x, y);
+    if (role === 'vacant') {
+      // 6F GYM on both plates: a short, readable set of machines; no vacant boxes/markers.
+      put('tread', 2, 14, 2);
+      put('tread', 5, 14, 2);
+      put('mat', 2, 12);
+      put('mat', 4, 12);
+      put('bench', 3, 13, 2);
+      put('bike', 13, 7);
+      put('bike', 15, 7);
+      put('weights', 13, 3, 2);
+      put('bench', 15, 3);
+      put('plant', 15, 4);
+      return items;
+    }
+    if (SHIFT > 0 && (role === 'lobby' || role === 'lounge')) {
+      // Plate-B 1F / 2F: a short, hand-placed list for the audience-facing strip (abs coords, visible tiles only).
+      // The reserved aisle (x=8 column, diagonal, y=6 row) and the (10,9) connector stay empty; open floor is left
+      // between groups so the pieces read individually instead of as a field of small blocks.
+      const edge = gridN - 2;
+      if (role === 'lobby') {
+        // Reception: desk on the front-left, receptionist sits at its first tile (stackFolk 1F).
+        putAt('desk', 2, edge - 1, 3, -1);
+        // Entrance: two gate posts flank the aisle column; the aisle tile between them stays open.
+        putAt('gate', 7, edge - 1);
+        putAt('gate', 9, edge - 1);
+        // Waiting seats and a side table beside the reception.
+        putAt('sofa', 4, 13, 2);
+        putAt('table', 5, 14);
+        putAt('sofa', 5, 15, 2);
+        putAt('plant', 2, edge);
+        putAt('plant', 9, 13);
+        // Public exhibition: three display screens on the right wing, seats and plants in front.
+        putAt('screen', 12, 8, 2);
+        putAt('screen', 15, 8, 2);
+        putAt('screen', 16, 4, 2);
+        putAt('sofa', 13, 9, 2);
+        putAt('plant', edge, 9);
+        putAt('plant', edge, 7);
+      } else {
+        // Lounge seating group (front-left): two sofas around a low table.
+        putAt('sofa', 3, edge - 1, 2);
+        putAt('table', 3, edge - 2, 2);
+        putAt('sofa', 4, edge - 3, 2);
+        putAt('plant', 2, edge);
+        putAt('plant', 7, edge);
+        putAt('plant', 9, 13);
+        // Right wing: coffee station with tea tables in front, ping-pong at the back with clear play space.
+        putAt('coffee', 13, 8, 2);
+        putAt('table', 15, 8);
+        putAt('table', 15, 9);
+        putAt('sofa', 12, 9, 2);
+        putAt('plant', edge, 8);
+        putAt('pong', 14, 4, 3);
+        putAt('plant', edge, 2);
+      }
+      return items;
+    }
     if (role === 'rnd' && level === 5 && SHIFT > 0) {
       // Reserve the front-left meeting area: table with chairs around it.
       putAt('table', 3, gridN - 3, 2);
@@ -1595,52 +1938,41 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         // Right-facing front corner: workstations and plants only, no file/box storage.
         for (const y of [3, 5, 7]) if (seen(edge, y)) putAt('plant', edge, y);
         for (const y of [4, 6]) if (seen(edge - 1, y)) putAt('desk', edge - 1, y, 2, -1);
-      } else {
-        // Other floors: use appropriate furniture for each floor type, avoiding file/box piles.
-        const strip: Pt[] = [];
-        for (let y = 1; y <= edge; y++) strip.push({ x: 1, y });
-        for (let x = 1; x <= edge; x++) strip.push({ x, y: edge });
-        for (let y = 1; y <= edge; y++) strip.push({ x: edge, y });
-        for (const t of strip) {
-          if (!seen(t.x, t.y)) continue;
-          if (role === 'rnd') {
-            // 7F R&D: workstations with plants, same readability as 5F but different arrangement
-            if (t.y === edge && t.x % 2 === 0 && putAt('desk', t.x, t.y - 1, 2, 1)) continue;
-            putAt((t.x + t.y) % 3 === 0 ? 'plant' : (t.x + t.y) % 2 === 0 ? 'desk' : 'plant', t.x, t.y);
-          } else if (role === 'sales') {
-            // 3F sales: workstations with plants, clear front strip
-            if (t.y === edge && t.x % 2 === 0 && putAt('desk', t.x, t.y - 1, 2, 1)) continue;
-            putAt((t.x + t.y) % 3 === 0 ? 'plant' : 'desk', t.x, t.y);
-          } else if (role === 'it') {
-            // 4F IT: keep server racks (real infrastructure), not file boxes
-            putAt('rack', t.x, t.y);
-          } else if (role === 'vacant') {
-            // 6F vacant: sparse, a few leftover items, not packed with boxes
-            if ((t.x + t.y) % 5 === 0) putAt('marker', t.x, t.y);
-            else if ((t.x * 3 + t.y * 2) % 7 === 0) putAt('chairs', t.x, t.y);
-          } else if (role === 'lounge') {
-            // 2F lounge: sofas, tables, plants - casual furniture. Fewer items, larger distinct pieces, open path.
-            if ((t.x + t.y) % 4 === 0) putAt('sofa', t.x, t.y, 2);
-            else if ((t.x + t.y) % 3 === 0) putAt('table', t.x, t.y);
-            else putAt('plant', t.x, t.y);
-          } else {
-            // 1F lobby: reception desk, screens, seats, plants. Open entrance, circulation path, no dense cubes.
-            if (t.x === 1 && t.y === edge) putAt('desk', t.x, t.y, 3, -1); // reception desk
-            else if ((t.x + t.y) % 3 === 0) putAt('screen', t.x, t.y, 2);
-            else if ((t.x + t.y) % 2 === 0) putAt('sofa', t.x, t.y, 2);
-            else putAt('plant', t.x, t.y);
-          }
-        }
+      } else if (role === 'sales') {
+        // 3F sales strip: a few outward workstations and plants, not a desk on every front tile.
+        for (const x of [3, 7]) putAt('desk', x, edge - 1, 2, 1);
+        putAt('plant', 2, edge);
+        putAt('plant', 5, edge);
+        if (seen(1, 4)) putAt('desk', 1, 4, 1, -1);
+        if (seen(1, 8)) putAt('plant', 1, 8);
+        if (seen(1, 11)) putAt('desk', 1, 11, 1, -1);
+        if (seen(edge - 1, 5)) putAt('desk', edge - 1, 5, 2, -1);
+        if (seen(edge, 3)) putAt('plant', edge, 3);
+        if (seen(edge, 7)) putAt('plant', edge, 7);
+      } else if (role === 'it') {
+        // 4F strip: rack clusters with gaps, not a solid wall of cabinets; core racks stay below.
+        for (const x of [2, 3, 5, 6]) if (seen(x, edge)) putAt('rack', x, edge);
+        if (seen(8, edge)) putAt('plant', 8, edge);
+        for (const y of [3, 4, 7, 13, 14]) if (seen(1, y)) putAt('rack', 1, y);
+        if (seen(1, 6)) putAt('plant', 1, 6);
+        for (const y of [3, 4, 7]) if (seen(edge, y)) putAt('rack', edge, y);
+      } else if (role === 'rnd') {
+        // 7F R&D strip: readable desks and plants, different rhythm from the 5F sample.
+        for (const x of [3, 8]) putAt('desk', x, edge - 1, 2, 1);
+        putAt('plant', 2, edge);
+        putAt('plant', 6, edge);
+        putAt('plant', 11, edge);
+        for (const y of [4, 14]) if (seen(1, y)) putAt('desk', 1, y, 1, -1);
+        for (const y of [7, 11]) if (seen(1, y)) putAt('plant', 1, y);
+        if (seen(edge - 1, 5)) putAt('desk', edge - 1, 5, 2, -1);
+        if (seen(edge, 3)) putAt('plant', edge, 3);
+        if (seen(edge, 7)) putAt('plant', edge, 7);
       }
     }
     for (let y = 2 + SHIFT; y <= 7 + SHIFT; y++) {
       for (let x = 11 + SHIFT; x <= 15 + SHIFT; x++) {
         if (!seen(x, y)) continue;
         if (role === 'it') putAt('rack', x, y);
-        else if (role === 'vacant') {
-          if (SHIFT === 0) putAt((x + y) % 2 === 0 ? 'box' : 'marker', x, y);
-          else if ((x * 2 + y) % 7 === 0) putAt('marker', x, y);
-        }
         else if (role === 'lounge') putAt(x % 2 === 0 ? 'table' : 'plant', x, y);
         else if (role === 'lobby') {
           if (!putAt('screen', x, y, 2)) putAt('plant', x, y);
@@ -1688,7 +2020,6 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
       for (let y = 1; y <= gridN - 2 && !placed; y++) {
         for (let x = 1; x <= gridN - 2; x++) {
           if (!seen(x, y) || !holeAt(x, y)) continue;
-          if (role === 'vacant' && (x + y) % 2 === 0) continue;
           const kind = filler[(x + y + level) % filler.length] ?? 'plant';
           if (putAt(kind, x, y)) {
             placed = true;
@@ -1697,17 +2028,6 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         }
       }
       if (!placed) break;
-    }
-    if (role === 'vacant') {
-      if (SHIFT === 0) {
-        for (let y = 1; y <= gridN - 2; y++) {
-          for (let x = 1; x <= gridN - 2; x++) {
-            if (!seen(x, y) || (x * 2 + y) % 3 !== 0) continue;
-            putAt((x + y) % 3 === 0 ? 'chairs' : 'box', x, y);
-          }
-        }
-      }
-      // Plate-B vacant: intentionally sparse, no dense box packing
     }
     return items;
   }
@@ -1748,22 +2068,25 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         const gx = x;
         const gy = y;
         pushDraw(gx, gy, 0, (g) => {
+          const lit = building && hoveredFloor === sim.cfg.level;
           const sideA = building ? 1 : 0.9;
-          const sideC = building ? 0x071018 : 0x0c243c;
+          const sideC = lit ? 0x163044 : building ? 0x071018 : 0x0c243c;
           const cut = (nx: number, ny: number) => (building ? !towerSolid(nx, ny) : !layout.solid(nx, ny));
           const edge = (x0: number, y0: number, x1: number, y1: number, fill: number, strokeA: number) => {
-            if (building) poly(g, face(x0, y0, x1, y1), fill, 1);
+            if (building) poly(g, face(x0, y0, x1, y1), fill, 1, lit ? ICE : undefined, lit ? 0.55 : 0);
             else poly(g, face(x0, y0, x1, y1), fill, sideA, ICE, strokeA);
           };
           if (cut(x, y - 1)) edge(x, y, x + 1, y, sideC, 0.35);
           if (cut(x + 1, y)) edge(x + 1, y, x + 1, y + 1, sideC, 0.3);
-          if (cut(x, y + 1)) edge(x, y + 1, x + 1, y + 1, building ? 0x0a1828 : 0x0e2844, 0.4);
+          if (cut(x, y + 1)) edge(x, y + 1, x + 1, y + 1, lit ? 0x1a3d5c : building ? 0x0a1828 : 0x0e2844, 0.4);
           if (cut(x - 1, y)) edge(x, y, x, y + 1, sideC, 0.3);
         });
         pushDraw(gx, gy, 2, (g) => {
           const mark = (x + y) % 2 === 0;
+          const lit = building && hoveredFloor === sim.cfg.level;
           if (building) {
-            poly(g, tilePts(x, y, floorZ), 0x0c1828, 1, mark ? 0x163044 : undefined, 0.45);
+            poly(g, tilePts(x, y, floorZ), lit ? 0x1a3d5c : 0x0c1828, 1, lit ? ICE : mark ? 0x163044 : undefined, lit ? 0.8 : 0.45);
+            if (lit) poly(g, tilePts(x, y, floorZ), ICE, 0.12);
           } else {
             poly(g, tilePts(x, y, floorZ), 0x0a1c33, 0.42, mark ? DIM : undefined, 0.28);
           }
@@ -1847,21 +2170,25 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
         const ox = atDesk ? person.homeX : person.x;
         const oy = atDesk ? person.homeY : person.y;
         const floorPt = iso(ox + across, oy + along, floorZ);
-        const foot = atDesk ? raise(floorPt, u(DESK_H) - s(2)) : floorPt;
-        drawPerson(g, foot, person.pose, person.phase, atDesk, person.dirX, person.dirY, person.seed % 4);
+        const foot = atDesk ? raise(floorPt, seatLift()) : floorPt;
+        const dx = atDesk ? 0 : person.dirX;
+        const dy = atDesk ? (person.face === 1 ? -1 : 1) : person.dirY;
+        drawPerson(g, foot, person.pose, person.phase, atDesk, dx, dy, person.seed % 4);
       });
       if (atDesk) {
         pushDraw(gx, gy, person.face === 1 ? 12 : 5, (g) => {
           const along = person.face === 1 ? 0.72 : 0.28;
           const floorPt = iso(person.homeX + person.span / 2, person.homeY + along, floorZ);
           personScale = building ? 1 : 2;
-          drawArms(g, raise(floorPt, u(DESK_H) - s(2)), person.phase);
+          drawArms(g, raise(floorPt, seatLift()), person.phase);
         });
       }
     }
     queue.sort((a, b) => a.key - b.key);
     for (const item of queue) item.draw(world);
-    strokeLoop(world, sim.outline, ICE);
+    const lit = building && hoveredFloor === sim.cfg.level;
+    strokeLoop(world, sim.outline, lit ? WHITE : ICE);
+    if (lit) strokeLoop(world, sim.outline, ICE);
     const seated = people.filter((p) => p.pose === 'sit' || p.pose === 'chat').length;
     const wallTop = iso(0, 0, wallZ).y;
     if (!building) {
@@ -2039,22 +2366,60 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
   return {
     canvas,
     el: wrap,
-    resize(displayPx: number) {
-      const scale = Math.max(1, Math.floor(displayPx / VIEW));
-      const px = VIEW * scale;
-      canvas.style.width = `${px}px`;
-      canvas.style.height = `${px}px`;
+    resize(availW: number, availH?: number) {
+      // Display size only; backing stays frameW×frameH×HD. Contain-fit so
+      // typical desktops keep the same building display height as the 600
+      // square, while the wider canvas uses leftover width.
+      const aw = Math.max(1, Math.floor(availW));
+      const ah = Math.max(1, Math.floor(availH ?? availW));
+      const scale = Math.min(aw / frameW, ah / frameH);
+      const cssW = Math.max(1, Math.floor(frameW * scale));
+      const cssH = Math.max(1, Math.floor(frameH * scale));
+      canvas.style.width = `${cssW}px`;
+      canvas.style.height = `${cssH}px`;
+      wrap.style.width = `${cssW}px`;
+      wrap.style.height = `${cssH}px`;
     },
     update(dt: number, now: number) {
-      stepPeople(Math.min(0.05, dt));
+      const step = Math.min(0.05, dt);
+      stepPeople(step);
+      if (building) stepElevator(elevator, step);
       // Count walkers standing on a non-walkable tile; read by scripts/capture.mjs.
-      const t = (window as unknown as { __tower?: { onFurniture?: number } }).__tower;
+      const t = (window as unknown as { __tower?: Record<string, unknown>; onFurniture?: number }).__tower;
       if (t) {
         for (const sim of sims) {
           for (const p of sim.people) {
             if (p.pose === 'sit') continue;
-            if (!sim.layout.walkable(Math.round(p.x), Math.round(p.y))) t.onFurniture = (t.onFurniture ?? 0) + 1;
+            if (!sim.layout.walkable(Math.round(p.x), Math.round(p.y))) t.onFurniture = ((t.onFurniture as number | undefined) ?? 0) + 1;
           }
+        }
+        if (building) {
+          const low = sims.find((s) => s.cfg.level === 1);
+          if (low) {
+            originX = low.originX;
+            originY = low.originY;
+          }
+          const mid = iso((SHAFT_X0 + SHAFT_X1) / 2, (SHAFT_Y0 + SHAFT_Y1) / 2, 0);
+          const lift = carLift(elevator.y) + 1;
+          const carY = mid.y - (lift + CAR_H / 2);
+          t.elevator = {
+            y: elevator.y,
+            v: elevator.v,
+            phase: elevator.phase,
+            floor: elevator.floor,
+            target: elevator.target,
+            wait: elevator.wait,
+            carY,
+            carTop: Math.round(carY - CAR_H / 2),
+            carBot: Math.round(carY - CAR_H / 2) + CAR_H,
+            carH0: lift,
+            carH1: lift + CAR_H,
+            shaftTop,
+            shaftBot,
+            shaftMinX,
+            shaftMaxX,
+            shaftH,
+          };
         }
       }
       rebuild(now);
@@ -2078,6 +2443,54 @@ function volume(g: Graphics, a: Pt, b: Pt, c: Pt, d: Pt, h0: number, h1: number)
     },
     setHour(next: number) {
       hourTint = next;
+    },
+    hitFloor(lx: number, ly: number) {
+      if (!building) return 0;
+      return hitFloorAt(lx, ly, hitEntries, hitExclude);
+    },
+    setHoveredFloor(level: number) {
+      const next = level > 0 ? level : 0;
+      if (hoveredFloor === next) return;
+      hoveredFloor = next;
+    },
+    floorGuideAnchor(level: number) {
+      const sim = sims.find((entry) => entry.cfg.level === level);
+      if (!sim) return null;
+      originX = sim.originX;
+      originY = sim.originY;
+      const lip = iso(0, gridN - 1, floorZ);
+      const textH = 5 * LABEL_SCALE;
+      const labels = sims.map((entry) => {
+        const text = `${entry.cfg.label} ${entry.cfg.name}`;
+        return {
+          level: entry.cfg.level,
+          x: entry.labelX,
+          y: entry.labelY,
+          w: text.length * 6 * LABEL_SCALE,
+          h: 5 * LABEL_SCALE,
+        };
+      });
+      const self = labels.find((item) => item.level === level) ?? {
+        level,
+        x: sim.labelX,
+        y: sim.labelY,
+        w: 0,
+        h: textH,
+      };
+      // Attach just under this floor's glyphs; the overlay routes around every label box.
+      return {
+        x: lip.x,
+        y: sim.labelY + textH + 4,
+        labelX: sim.labelX,
+        labelY: sim.labelY,
+        labelW: self.w,
+        labelH: self.h,
+        lipX: lip.x,
+        labels,
+      };
+    },
+    logicalSize() {
+      return { width: frameW, height: frameH };
     },
   };
 }

@@ -87,7 +87,7 @@ export interface OfficeView {
   canvas: HTMLCanvasElement;
   el: HTMLElement;
   update(dt: number, now: number): void;
-  resize(displayPx: number): void;
+  resize(availW: number, availH?: number): void;
   push(event: OfficeEvent): void;
   levelsFor(type: OfficeEventType): number[];
   setHour(hour: number): void;
@@ -310,7 +310,8 @@ export function createOffice(configs: readonly FloorConfig[]): OfficeView {
       renderer.setClearColor(night ? 0x081018 : dusk ? 0x0a1424 : 0x0c1830, 1);
       if (scene.background instanceof Color) scene.background.set(night ? 0x081018 : dusk ? 0x0a1424 : 0x0c1830);
     },
-    resize(displayPx) {
+    resize(availW, _availH?) {
+      const displayPx = availW;
       const pixelSize = Math.max(2, Math.round(displayPx / VIEW));
       renderer.setSize(displayPx, displayPx, false);
       composer.setSize(displayPx, displayPx);
